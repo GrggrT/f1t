@@ -2,3 +2,9 @@ pytest>=8.0.0
 pytest-asyncio>=0.23.0
 pytest-timeout>=2.2.0
 pytest-mock>=3.12.0
+
+# Required to import agent.* test modules inside the backend-test image
+# (bind-mounted via docker-compose.test.yml). The f1-packets package
+# is what exposes the `f1.*` namespace used by tests/test_packet_replay_harness.py.
+f1-packets==2025.1.1
+websockets==12.0

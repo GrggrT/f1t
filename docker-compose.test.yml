@@ -46,6 +46,7 @@ services:
     volumes:
       - ./backend:/app/backend:ro
       - ./tests:/app/tests:ro
+      - ./agent:/app/agent:ro
       - ./pyproject.toml:/app/pyproject.toml:ro
     working_dir: /app
     entrypoint: ["pytest"]

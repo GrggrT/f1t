@@ -268,3 +268,49 @@ Concrete PR 0.6.3 actions:
 2. Add to `docker-compose.test.yml` `backend-test` service: `volumes: - ./agent:/app/agent:ro`.
 3. Run tests. If `test_agent_runtime_lifecycle.py` still fails on missing `pystray`/`pywebview`, quarantine just that one with `@pytest.mark.skipif(sys.platform != "win32", reason="depends on Windows UI stack")` and TODO link.
 4. Re-run: expect either 28 PASS / 0 errors / 1 skip, or 28 PASS / 0 errors / 0 skips.
+
+---
+
+## Sprint 0.6.3: Apply test triage decisions (date: 2026-05-14)
+
+Applied two changes only (no test-file modifications):
+
+1. `backend/requirements-dev.txt` — added `f1-packets==2025.1.1`, `websockets==12.0`.
+2. `docker-compose.test.yml` — bind-mount `./agent:/app/agent:ro` in `backend-test` service.
+
+### Run result
+
+```
+48 passed in 20.90s
+```
+
+- **0 errors** (all 7 ex-collection-errors now collect and pass)
+- **0 failed** / **0 skipped** / **0 deleted**
+- `test_agent_runtime_lifecycle.py` collected and passed — the Windows-only UI deps (`pystray`, `pywebview`) aren't transitively imported when `agent.main.F1Agent` and `agent.state_machine` are loaded directly. Quarantine plan from 0.6.2 not needed.
+
+### Test count by file (final)
+
+| File | Tests | Result |
+|------|------:|:------:|
+| `tests/test_agent_runtime_lifecycle.py` | 6 | ✅ all pass |
+| `tests/test_backend_auth_integration.py` | 2 | ✅ |
+| `tests/test_backend_contract_smoke.py` | 1 | ✅ |
+| `tests/test_backend_contracts_integration.py` | 2 | ✅ |
+| `tests/test_backend_external_delivery_integration.py` | 2 | ✅ |
+| `tests/test_backend_lobby_integration.py` | 2 | ✅ |
+| `tests/test_backend_race_submit_integration.py` | 3 | ✅ |
+| `tests/test_backend_telemetry_integration.py` | 2 | ✅ |
+| `tests/test_backend_ws_and_concurrency_integration.py` | 4 | ✅ |
+| `tests/test_healthcheck.py` | 1 | ✅ |
+| `tests/test_launcher_delivery_recovery.py` | 2 | ✅ |
+| `tests/test_packet_replay_harness.py` | 3 | ✅ |
+| `tests/test_personal_session_sync.py` | 3 | ✅ |
+| `tests/test_postmortem_tooling.py` | 3 | ✅ |
+| `tests/test_race_submit_idempotency.py` | 2 | ✅ |
+| `tests/test_telemetry_pipeline_integrity.py` | 7 | ✅ |
+| `tests/test_upload_cache.py` | 3 | ✅ |
+| **Total** | **48** | **48 passed** |
+
+### Sprint 0.6 outcome
+
+After Sprint 0.6 the team has a fully working regression net of **48 backend integration + agent unit tests** runnable via `./scripts/run_tests.sh`. Going into Sprint 1, any "Tests: добавить test_X.py" entry in acceptance criteria has a real baseline to compare against.
