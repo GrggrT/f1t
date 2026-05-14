@@ -5,6 +5,8 @@ import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { formatLapTime } from "@/lib/utils"
 
+import { apiFetch } from "@/lib/api-client"
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://192.168.0.114:8000"
 
 interface PracticeLap {
@@ -51,7 +53,7 @@ export default function PracticePage() {
       return
     }
 
-    fetch(`${API}/api/practice/sessions?web_user_id=${userId}`)
+    apiFetch(`/api/practice/sessions?web_user_id=${userId}`)
       .then((response) => (response.ok ? response.json() : []))
       .then((payload) => setSessions(Array.isArray(payload) ? payload : []))
       .finally(() => setLoading(false))
@@ -65,7 +67,7 @@ export default function PracticePage() {
 
     setDetailLoading(true)
     try {
-      const response = await fetch(`${API}/api/practice/sessions/${sessionRow.id}`)
+      const response = await apiFetch(`/api/practice/sessions/${sessionRow.id}`)
       if (response.ok) {
         setSelected(await response.json())
       }

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { useEffect, useState } from "react"
 import type { LobbyInfo, LobbyMember } from "@/lib/api"
+import { apiFetch } from "@/lib/api-client"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -25,8 +26,8 @@ export default function LobbyPage() {
     }
 
     Promise.all([
-      fetch(`${BASE}/api/lobby/${id}${userId ? `?web_user_id=${userId}` : ""}`).then((response) => (response.ok ? response.json() : null)),
-      fetch(`${BASE}/api/lobby/${id}/members`).then((response) => (response.ok ? response.json() : [])),
+      apiFetch(`/api/lobby/${id}${userId ? `?web_user_id=${userId}` : ""}`).then((response) => (response.ok ? response.json() : null)),
+      apiFetch(`/api/lobby/${id}/members`).then((response) => (response.ok ? response.json() : [])),
     ])
       .then(([nextLobby, nextMembers]) => {
         setLobby(nextLobby)
@@ -42,15 +43,14 @@ export default function LobbyPage() {
 
     setCreating(true)
     try {
-      const response = await fetch(`${BASE}/api/lobby/${id}/seasons`, {
+      const response = await apiFetch(`/api/lobby/${id}/seasons`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requester_id: userId, name: newSeasonName.trim() }),
       })
 
       if (response.ok) {
         setNewSeasonName("")
-        const refreshedLobby = await fetch(`${BASE}/api/lobby/${id}?web_user_id=${userId}`).then((nextResponse) =>
+        const refreshedLobby = await apiFetch(`/api/lobby/${id}?web_user_id=${userId}`).then((nextResponse) =>
           nextResponse.ok ? nextResponse.json() : null,
         )
         setLobby(refreshedLobby)

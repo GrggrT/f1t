@@ -5,6 +5,8 @@ import { Suspense, useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
 
+import { apiFetch } from "@/lib/api-client"
+
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 function JoinContent() {
@@ -28,9 +30,8 @@ function JoinContent() {
     setError("")
 
     try {
-      const response = await fetch(`${BASE}/api/lobby/join-by-code`, {
+      const response = await apiFetch(`/api/lobby/join-by-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ web_user_id: userId, invite_code: code.trim() }),
       })
       const payload = await response.json()

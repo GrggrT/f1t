@@ -5,6 +5,8 @@ import { signOut, useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 
+import { apiFetch } from "@/lib/api-client"
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? ""
 
 interface WebMe {
@@ -144,7 +146,7 @@ export default function MePage() {
       .then((payload) => setPlayers(payload))
       .catch(() => {})
 
-    fetch(`${API}/api/lobby?web_user_id=${userId}`)
+    apiFetch(`/api/lobby?web_user_id=${userId}`)
       .then((response) => (response.ok ? response.json() : []))
       .then(setLobbies)
       .catch(() => {})
@@ -186,9 +188,8 @@ export default function MePage() {
     setLinking(true)
     setLinkMessage(null)
 
-    const response = await fetch(`${API}/api/web/link-player`, {
+    const response = await apiFetch(`/api/web/link-player`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: me.id, player_id: Number(linkId) }),
     })
     const payload = await response.json()
@@ -212,9 +213,8 @@ export default function MePage() {
     setAssistantAnswer(null)
 
     try {
-      const response = await fetch(`${API}/api/seasons/assistant`, {
+      const response = await apiFetch(`/api/seasons/assistant`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ player_id: me.player_id, question: question.trim() }),
       })
       const payload = await response.json()
@@ -233,15 +233,14 @@ export default function MePage() {
 
     setCreatingLobby(true)
     try {
-      const response = await fetch(`${API}/api/lobby`, {
+      const response = await apiFetch(`/api/lobby`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newLobbyName.trim(), web_user_id: me.id }),
       })
 
       if (response.ok) {
         setNewLobbyName("")
-        const nextLobbies = await fetch(`${API}/api/lobby?web_user_id=${me.id}`).then((nextResponse) =>
+        const nextLobbies = await apiFetch(`/api/lobby?web_user_id=${me.id}`).then((nextResponse) =>
           nextResponse.ok ? nextResponse.json() : [],
         )
         setLobbies(nextLobbies)

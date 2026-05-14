@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+import { apiFetch } from "@/lib/api-client"
 
 export function CreateLobbyButton() {
   const { data: session } = useSession()
@@ -30,9 +30,8 @@ export function CreateLobbyButton() {
     setError("")
 
     try {
-      const response = await fetch(`${BASE}/api/lobby`, {
+      const response = await apiFetch(`/api/lobby`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined }),
       })
 

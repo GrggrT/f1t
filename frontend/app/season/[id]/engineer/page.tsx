@@ -4,6 +4,8 @@ import Link from "next/link"
 import { useSession } from "next-auth/react"
 import { useEffect, useRef, useState } from "react"
 
+import { apiFetch } from "@/lib/api-client"
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? ""
 
 interface Message {
@@ -53,7 +55,7 @@ export default function EngineerPage({ params }: { params: { id: string } }) {
 
     setContextLoading(true)
 
-    fetch(`${API}/api/lobby/${seasonId}/engineer?web_user_id=${userId}`)
+    apiFetch(`/api/lobby/${seasonId}/engineer?web_user_id=${userId}`)
       .then((response) => (response.ok ? response.json() : null))
       .then((payload: EngineerContext | null) => {
         setContext(payload)
@@ -84,9 +86,8 @@ export default function EngineerPage({ params }: { params: { id: string } }) {
     setLoading(true)
 
     try {
-      const response = await fetch(`${API}/api/lobby/${seasonId}/engineer/ask`, {
+      const response = await apiFetch(`/api/lobby/${seasonId}/engineer/ask`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           web_user_id: userId,
           question: nextQuestion,
