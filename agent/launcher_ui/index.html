@@ -1653,6 +1653,45 @@ select:focus {
   box-shadow: inset 0 1px 0 rgba(88,181,111,0.12);
 }
 
+.agent-token-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(201,138,46,0.08);
+  border: 1px solid rgba(201,138,46,0.32);
+  box-shadow: inset 0 1px 0 rgba(201,138,46,0.16);
+}
+
+.agent-token-banner .eyebrow { color: var(--warn); }
+.agent-token-banner strong { display: block; margin-top: 4px; font-size: 15px; }
+
+.agent-token-banner-form {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.agent-token-banner-form input {
+  min-width: 280px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.agent-token-banner-form input:focus {
+  outline: none;
+  border-color: rgba(201,138,46,0.55);
+}
+
 .event-item {
   padding: 11px 12px;
   background: #131920;
@@ -3602,6 +3641,28 @@ async function doGoogleLogin() {
     await pollGoogleLogin(result.poll_id);
   } catch (error) {
     toast(error.message || "Не удалось запустить вход через Google", "error");
+  }
+}
+
+async function submitNewAgentToken() {
+  // Called from the auth-rejected banner on the dashboard. After backend
+  // hands out a fresh AGENT_SECRET_TOKEN (PR 1.4 rotation) the user pastes
+  // it here. set_agent_token() persists it; uploader/telemetry/ws_client
+  // pick it up on the next attempt without restarting the agent.
+  const input = document.getElementById("agent-token-input");
+  if (!input) return;
+  const value = (input.value || "").trim();
+  if (!value) {
+    toast("Введите токен.", "warn");
+    return;
+  }
+  try {
+    unwrap(await api("set_agent_token", value), "Не удалось применить токен");
+    input.value = "";
+    toast("AGENT_SECRET_TOKEN применён", "success");
+    await refreshRuntime();
+  } catch (error) {
+    toast(error.message || "Не удалось применить токен", "error");
   }
 }
 

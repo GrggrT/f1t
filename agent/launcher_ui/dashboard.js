@@ -29,9 +29,11 @@ function getDashboardViewModel() {
   const startupIssue = components.startup?.last_error?.message || status.error;
   const headlineIssue = recovery.find(item => item.severity !== "ok");
   const issueCount = recovery.filter(item => item.severity !== "ok").length;
+  const authRejected = Boolean(diagnostics.auth_rejected);
 
   return {
     authOk,
+    authRejected,
     backendOk,
     components,
     diagnostics,
@@ -267,6 +269,7 @@ function renderRecentEvents(events) {
 
 function getDashboardSectionRenderers() {
   return {
+    authBanner: renderAgentTokenBanner,
     summary: renderDashboardSummarySection,
     control: renderDashboardControlSection,
     metrics: renderDashboardMetricsSection,
@@ -276,9 +279,25 @@ function getDashboardSectionRenderers() {
   };
 }
 
+function renderAgentTokenBanner(view) {
+  if (!view.authRejected) return "";
+  return `<div class="agent-token-banner" role="alert">
+      <div>
+        <div class="eyebrow">Аутентификация агента</div>
+        <strong>Сервер отклонил текущий AGENT_SECRET_TOKEN (401).</strong>
+        <p class="dashboard-phase-copy clamp-2">Введите новый токен — uploader / telemetry / ws_client подхватят его на следующей попытке без перезапуска.</p>
+      </div>
+      <div class="agent-token-banner-form">
+        <input id="agent-token-input" type="password" placeholder="Новый AGENT_SECRET_TOKEN" autocomplete="off" />
+        ${renderButton({ label: "Применить", variant: "primary", onclick: "submitNewAgentToken()" })}
+      </div>
+    </div>`;
+}
+
 function getDashboardSectionSignatures(view) {
-  const { components, diagnostics, lifecycle, live, pendingEntries, pendingTelemetry, pendingUploads, recentEvents, retryRunning, selectedHostSeason, startDisabled, startupIssue, status, telemetryBlocked, telemetryReady } = view;
+  const { authRejected, components, diagnostics, lifecycle, live, pendingEntries, pendingTelemetry, pendingUploads, recentEvents, retryRunning, selectedHostSeason, startDisabled, startupIssue, status, telemetryBlocked, telemetryReady } = view;
   return {
+    authBanner: dashboardSignature({ authRejected }),
     summary: dashboardSignature({
       live: {
         active: live.active,
@@ -602,6 +621,7 @@ function renderDashboard() {
   const view = getDashboardViewModel();
   state.dashboardSectionSignatures = getDashboardSectionSignatures(view);
   return `<div class="page page-dashboard">
+    <div data-dashboard-section="authBanner">${renderAgentTokenBanner(view)}</div>
     <div class="dashboard-top">
       <section class="shell-card dashboard-card dashboard-summary" data-dashboard-section="summary">${renderDashboardSummarySection(view)}</section>
       <section class="shell-card dashboard-card dashboard-control" data-dashboard-section="control">${renderDashboardControlSection(view)}</section>
