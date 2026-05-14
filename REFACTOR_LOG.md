@@ -124,3 +124,23 @@
 5. **Consolidate Groq calls** into `backend/services/groq_client.py` (single `async def ask_groq(prompt, *, model=None, system=None) -> str` + shared "key not set" message). Refactor all 7 sites in a separate PR — keeps the auth/secrets sprint focused.
 6. **PR 1.5 (NextAuth id_token verification)**: confirm whether backend should re-verify the Google id_token on every session refresh or only on first sign-in. The current `jwt` callback does **not** receive `account` beyond first call, so a per-refresh model would require Google's userinfo endpoint or storing the id_token in the JWT. Pick one approach and document it before implementation.
 7. **Models module**: leave `backend/models/__init__.py` empty (current state is fine) **or** explicitly re-export the most-used classes there in a separate cosmetic PR — but don't bundle that with auth/DB work.
+
+---
+
+## 2026-05-14: Baseline backup created (PR 0.3)
+
+- **Dump:** `backups/pre-refactor-baseline-20260514.pgc` (75 KB, PostgreSQL custom format v1.15)
+- **Git tag:** `pre-refactor-baseline` → commit `c027cdf` on `main`
+- **Remote:** [github.com/GrggrT/f1t](https://github.com/GrggrT/f1t) (first push: `main` + tag)
+- **External copy:** ⏳ to be performed manually by the operator (OneDrive / USB / external HDD)
+- **Restore protocol:** validated end-to-end via `staging_up.sh` during PR 0.1 acceptance (staging postgres restored from dump → backend HTTP 200 on `/api/players` → row count matched prod)
+- **GitHub Secret Scanning:** flagged real secrets in `.claude/CLAUDE.md:23` (GOOGLE_CLIENT_SECRET) — initial push rejected. Scrubbed all `*_SECRET`, `*_TOKEN`, `*_KEY`, `POSTGRES_PASSWORD` values to `<set in .env>` placeholders before successful push. The actual secrets are still considered leaked (visible to the operator and AI sessions); rotation is on the books for PR 1.4.
+
+## Sprint -0.5 + Sprint 0 status
+
+- [x] PR -0.5.1: discovery
+- [x] PR -0.5.2: pytest infrastructure
+- [x] PR -0.5.3: ephemeral staging
+- [x] PR 0.1: automated daily backup
+- [x] PR 0.2: backend healthcheck + log rotation
+- [x] PR 0.3: baseline backup + git tag + remote setup
