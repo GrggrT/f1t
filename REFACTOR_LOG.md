@@ -314,3 +314,39 @@ Applied two changes only (no test-file modifications):
 ### Sprint 0.6 outcome
 
 After Sprint 0.6 the team has a fully working regression net of **48 backend integration + agent unit tests** runnable via `./scripts/run_tests.sh`. Going into Sprint 1, any "Tests: добавить test_X.py" entry in acceptance criteria has a real baseline to compare against.
+
+---
+
+## Sprint 1: Security Wins — progress (date: 2026-05-14)
+
+- **PR 1.0** (commit `a1e7224`): Frontend `apiFetch` introduced; 7 acceptance endpoints (lobby create, join-by-code, season create, AI assistant, engineer ask, link-player, practice sessions) all carry `Authorization: Bearer ...`. Manual DevTools smoke via Chrome MCP confirmed against `localhost:3000` — zero 401s for an authenticated user.
+- **PR 1.0.5** (commits `79e7abc` + `efc4d56`): Three delivery modules (uploader / telemetry_delivery / ws_client) now detect HTTP 401 specifically, emit `auth_rejected` once, and exit the retry loop. `config.set_agent_token()` persists a rotated token to `~/f1league_agent/launcher_config.json`. Launcher UI banner renders when `diagnostics.auth_rejected = true` and lets the user paste a fresh token without restarting the agent.
+- **PR 1.1** (commit `d13ea56`): All 16 endpoints listed in the roadmap require auth via FastAPI `Depends(...)`. New `backend/services/auth_helpers.py` exposes `require_lobby_member`, `require_lobby_moderator`, `require_season_member`, `require_season_moderator`, `require_system_admin_dep` (system admins bypass lobby/season role checks). `tests/test_endpoint_authorization.py` parametrizes 401 checks across all 16 endpoints + spot 403 checks. DevTools verification: 8 endpoint calls from the live `/me` and `/lobby/3` pages, all 200/4xx non-auth.
+- **PR 1.2** (commit `a8f8a22`): `verify_agent_token` is fail-closed. 503 on unset env, 401 on missing/wrong header, `hmac.compare_digest` for constant-time compare. Test added; 56 total passing.
+- **PR 1.2.5** (commit `718a658`): `/season/[id]/manage` replaced with a stub (552 lines → 14). `SeasonNav` "Управление" tab hidden; inbound links from `/admin` and `/workspace` removed.
+- **PR 1.3** (commit `2dc8ed8`): `next` bumped to `^14.2.25` (resolves to 14.2.35, CVE-2025-29927 fixed). `bot` no longer publishes 8001 to host. `bot/internal_server.py` uses a shared `_verify_secret()` helper with `hmac.compare_digest`; three handlers cleaned up. New `frontend/.dockerignore` keeps host-side `.next` and `node_modules` out of the build context (without it, `next build` chokes on stale webpack cache).
+
+### PR 1.4: Secrets rotation (date: 2026-05-14)
+
+Self-managed secrets rotated server-side and applied to the running stack:
+
+| Secret | Before (prefix) | After (prefix) | Notes |
+|--------|----------------|----------------|-------|
+| `POSTGRES_PASSWORD` | `zs71` | `1brK` (32 chars) | Applied via `ALTER USER f1league WITH PASSWORD ...` inside the running postgres container. `DATABASE_URL` updated to match. |
+| `AGENT_SECRET_TOKEN` | `<empty>` | `KqqD` (43 chars) | Previously unset — PR 1.2 fail-closed would now refuse every agent endpoint without this; rotation also activates it. |
+| `BOT_NOTIFY_SECRET` | `a17X` | `BA0q` (43 chars) | Picked up by bot's internal_server (PR 1.3 compare_digest path). |
+| `NEXTAUTH_SECRET` | `cjqg` | `uWgX` (44 chars, base64) | All previous NextAuth sessions invalidated — every web user must re-login. Smoke test user re-login confirmed (post-clear-cookies). |
+
+Process notes:
+- Pre-rotation dump `backups/pre-pr14-rotation-20260514-222141.pgc` (75 KB).
+- One-time hiccup: an initial pass used `python3` which on Windows resolves to a Microsoft Store stub, silently no-op'd, and an `ALTER USER ... PASSWORD ''` ran with an empty value — postgres dropped the password (recoverable: `ALTER USER ... PASSWORD '<correct>'` via the local socket). Now using `python` explicitly and a real script file (`.rotate_secrets.py`, deleted post-run) avoids that class of failure.
+- Verified after rotation: `/healthz` 200, `/readyz` 200, smoke-test user re-login → backend token → `GET /api/practice/sessions` 200, automated backup wrote `dump-20260514-202844.pgc` (146 KB) immediately on cold-start with the new password. 56/56 tests still passing.
+- `.env.pre-pr14` preserved temporarily for one-shot recovery; contains the previous (compromised) values and should be deleted once the operator is confident the rotation is durable.
+
+External rotations **still pending** (these require the operator to revoke and re-issue in vendor consoles — no AI access):
+
+1. **`BOT_TOKEN`** — @BotFather → `/revoke` for the current bot → `/token` → new value → paste into `.env`.
+2. **`GROQ_API_KEY`** — [console.groq.com](https://console.groq.com/keys) → revoke + create a new key → paste.
+3. **`GOOGLE_CLIENT_SECRET`** — [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials → "Веб-сайт Лиги Формулы-1" → reset secret → paste.
+
+After each: `docker compose up -d --force-recreate <service>` (bot / backend / frontend respectively).
