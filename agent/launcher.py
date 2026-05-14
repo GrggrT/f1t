@@ -26,6 +26,8 @@ from urllib.parse import urlencode, urlparse, urlunparse
 import httpx
 import webview
 
+from agent import config
+
 
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys._MEIPASS)
@@ -290,6 +292,11 @@ class LauncherAPI:
         self._agent_started_at: float | None = None
         self._pending_retry_running = False
         self._recent_events = deque(maxlen=RECENT_EVENT_LIMIT)
+        # Flips True as soon as any delivery module reports HTTP 401 for
+        # AGENT_SECRET_TOKEN. The UI uses it to surface a re-configure prompt
+        # instead of letting the user watch a silent retry loop. Cleared by
+        # set_agent_token() once a fresh token is in place.
+        self._auth_rejected = False
 
         now = _now_iso()
         overlay_enabled = bool(self.config.get("overlay_enabled"))
@@ -588,6 +595,20 @@ class LauncherAPI:
 
     def _observe_runtime_event(self, source: str, event: str, payload: dict | None = None) -> None:
         payload = payload or {}
+
+        if event == "auth_rejected":
+            self._auth_rejected = True
+            component_map = {"upload": "upload", "telemetry": "telemetry", "ws": "ws"}
+            component = component_map.get(source, source if source in self._components else "upload")
+            self._set_component_state(
+                component,
+                "auth_failed",
+                "Сервер отклонил AGENT_SECRET_TOKEN — нужно ввести новый токен",
+                error="Agent token rejected (401)",
+                record_event=True,
+                level="warn",
+            )
+            return
 
         if source == "ws":
             if event in {"starting", "connecting"}:
@@ -1083,6 +1104,26 @@ class LauncherAPI:
 
     def logout(self) -> dict:
         self._clear_session()
+        return {"ok": True}
+
+    def set_agent_token(self, new_token: str) -> dict:
+        """Update the X-Agent-Token used by uploader / telemetry / ws_client.
+
+        Called from the UI after the backend rejects the current token with 401.
+        The new token persists to launcher_config.json (key 'agent_token') and
+        propagates to every delivery module on its next attempt — no agent
+        restart needed.
+        """
+        cleaned = (new_token or "").strip()
+        if not cleaned:
+            return {"error": "Введите токен."}
+        try:
+            config.set_agent_token(cleaned)
+        except Exception as exc:
+            return {"error": f"Не удалось сохранить токен: {exc}"}
+
+        self._auth_rejected = False
+        self._record_event("info", "auth", "Новый AGENT_SECRET_TOKEN применён", None)
         return {"ok": True}
 
     def start_google_login(self) -> dict:
@@ -1840,6 +1881,7 @@ class LauncherAPI:
             "live": self.get_live_session(),
             "components": self._component_snapshot(),
             "recent_events": list(self._recent_events),
+            "auth_rejected": self._auth_rejected,
         }
 
         start = time.perf_counter()

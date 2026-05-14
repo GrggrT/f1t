@@ -113,7 +113,7 @@ class AgentRuntimeLifecycleTests(unittest.TestCase):
 
 class WSClientLifecycleTests(unittest.TestCase):
     def test_ws_client_prefers_agent_secret_token_for_backend_auth(self):
-        with mock.patch("agent.ws_client.AGENT_SECRET_TOKEN", "agent-secret"):
+        with mock.patch("agent.ws_client.config.get_agent_secret_token", return_value="agent-secret"):
             with mock.patch("agent.ws_client.INVITE_TOKEN", "invite-token"):
                 self.assertEqual(WSClient._auth_token(), "agent-secret")
 

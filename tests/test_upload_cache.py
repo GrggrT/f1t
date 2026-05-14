@@ -120,7 +120,7 @@ class UploadCacheTests(unittest.TestCase):
         captured_posts: list[dict] = []
 
         with mock.patch("agent.uploader.RETRY_DELAYS", []):
-            with mock.patch.object(uploader, "AGENT_SECRET_TOKEN", "agent-secret"):
+            with mock.patch.object(uploader.config, "get_agent_secret_token", return_value="agent-secret"):
                 with mock.patch(
                     "agent.uploader.httpx.Client",
                     side_effect=lambda *args, **kwargs: _FakeClient(responses, captured_posts),

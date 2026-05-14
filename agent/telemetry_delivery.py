@@ -18,7 +18,8 @@ from typing import Any, Callable
 
 import httpx
 
-from agent.config import AGENT_SECRET_TOKEN, RETRY_DELAYS, SERVER_URL, TELEMETRY_CACHE_FILE
+from agent import config
+from agent.config import AuthFailureError, RETRY_DELAYS, SERVER_URL, TELEMETRY_CACHE_FILE
 from agent.telemetry_buffer import TelemetrySnapshot
 
 
@@ -193,9 +194,10 @@ def _extract_http_error(response: httpx.Response) -> str:
 
 
 def _agent_headers() -> dict[str, str]:
-    if not AGENT_SECRET_TOKEN:
+    token = config.get_agent_secret_token()
+    if not token:
         return {}
-    return {"X-Agent-Token": AGENT_SECRET_TOKEN}
+    return {"X-Agent-Token": token}
 
 
 def _load_archive_locked() -> list[dict]:
@@ -348,6 +350,8 @@ def _post_snapshot(race_id: int, snapshot: TelemetrySnapshot) -> None:
                 },
                 headers=_agent_headers(),
             )
+            if response.status_code == 401:
+                raise AuthFailureError(_extract_http_error(response))
             if response.status_code != 200:
                 raise RuntimeError(_extract_http_error(response))
 
@@ -363,6 +367,8 @@ def _post_snapshot(race_id: int, snapshot: TelemetrySnapshot) -> None:
                 },
                 headers=_agent_headers(),
             )
+            if response.status_code == 401:
+                raise AuthFailureError(_extract_http_error(response))
             if response.status_code != 200:
                 raise RuntimeError(_extract_http_error(response))
 
@@ -382,6 +388,8 @@ def _resolve_race_id_from_backend(session_uid: int, observer: Observer | None = 
             pending_flushes=pending_count(),
         )
         return None
+    if response.status_code == 401:
+        raise AuthFailureError(_extract_http_error(response))
     if response.status_code != 200:
         raise RuntimeError(_extract_http_error(response))
 
@@ -477,6 +485,23 @@ def flush_pending(session_uid: int, race_id: int | None = None, observer: Observ
                 pending_flushes=pending_count(),
             )
             return True
+        except AuthFailureError as exc:
+            error_message = str(exc) or "HTTP 401"
+            with _CACHE_LOCK:
+                entries = _load_entries_locked()
+                index = _find_entry_index(entries, session_uid)
+                if index is not None:
+                    _mark_failure_locked(entries, index, error_message, http_status=401)
+            print(f"[TELEM] Agent token rejected (401) — snapshot uid={session_uid} stays cached")
+            _emit(
+                observer,
+                "auth_rejected",
+                session_uid=session_uid,
+                race_id=effective_race_id,
+                attempt=attempt,
+                pending_flushes=pending_count(),
+            )
+            return False
         except Exception as exc:
             error_message = str(exc) or exc.__class__.__name__
             with _CACHE_LOCK:

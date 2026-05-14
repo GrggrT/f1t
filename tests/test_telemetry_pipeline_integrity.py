@@ -226,7 +226,7 @@ class TelemetryDeliveryPersistenceTests(unittest.TestCase):
             _FakeResponse(200, {"status": "ok", "samples": 1}),
         ]
         with mock.patch("agent.telemetry_delivery.RETRY_DELAYS", []):
-            with mock.patch.object(telemetry_delivery, "AGENT_SECRET_TOKEN", "agent-secret"):
+            with mock.patch.object(telemetry_delivery.config, "get_agent_secret_token", return_value="agent-secret"):
                 with mock.patch(
                     "agent.telemetry_delivery.httpx.Client",
                     side_effect=lambda *args, **kwargs: _FakeClient(telemetry_responses, telemetry_posts),
@@ -252,7 +252,7 @@ class TelemetryDeliveryPersistenceTests(unittest.TestCase):
             _FakeResponse(200, {"status": "ok", "samples": 1}),
         ]
         with mock.patch("agent.telemetry_delivery.RETRY_DELAYS", []):
-            with mock.patch.object(telemetry_delivery, "AGENT_SECRET_TOKEN", "agent-secret"):
+            with mock.patch.object(telemetry_delivery.config, "get_agent_secret_token", return_value="agent-secret"):
                 with mock.patch(
                     "agent.telemetry_delivery.httpx.Client",
                     side_effect=lambda *args, **kwargs: _FakeClient(telemetry_responses, telemetry_posts),

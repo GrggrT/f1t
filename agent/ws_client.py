@@ -20,7 +20,8 @@ except ImportError:
     WS_AVAILABLE = False
     print("[WS] WARNING: websockets not installed. Run: pip install websockets")
 
-from agent.config import AGENT_SECRET_TOKEN, INVITE_TOKEN, WS_URL
+from agent import config
+from agent.config import INVITE_TOKEN, WS_URL
 
 
 Observer = Callable[[str, dict], None]
@@ -194,6 +195,16 @@ class WSClient:
                 if not self._running or self._stop_requested.is_set():
                     break
 
+                if self._is_auth_rejection(exc):
+                    # Backend rejected the token. Retrying with the same token
+                    # is pointless — stop the loop and let the launcher prompt
+                    # the user for a new one via set_agent_token().
+                    self.state = "auth_failed"
+                    self._running = False
+                    print("[WS] Agent token rejected (401)")
+                    self._emit("auth_rejected", url=WS_URL, error=str(exc))
+                    break
+
                 self.state = "error"
                 print(f"[WS] Connection failed: {_safe_error_text(exc)}. Retry in {retry_delay}s")
                 self._emit(
@@ -218,7 +229,21 @@ class WSClient:
 
     @staticmethod
     def _auth_token() -> str:
-        return AGENT_SECRET_TOKEN or INVITE_TOKEN
+        return config.get_agent_secret_token() or INVITE_TOKEN
+
+    @staticmethod
+    def _is_auth_rejection(exc: Exception) -> bool:
+        """Best-effort detection of an HTTP 401 from the websockets handshake."""
+        for attr in ("status_code", "code"):
+            value = getattr(exc, attr, None)
+            if isinstance(value, int) and value == 401:
+                return True
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int) and status == 401:
+            return True
+        message = str(exc)
+        return "401" in message and ("Unauthorized" in message or "unauthorized" in message)
 
     async def _wait_or_stop(self, timeout_s: int) -> bool:
         if self._stop_async_event is None:

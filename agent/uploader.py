@@ -9,9 +9,8 @@ from typing import Callable
 
 import httpx
 
-from agent import local_cache
-from agent import telemetry_delivery
-from agent.config import AGENT_SECRET_TOKEN, RETRY_DELAYS, SEASON_ID, SERVER_URL
+from agent import config, local_cache, telemetry_delivery
+from agent.config import AuthFailureError, RETRY_DELAYS, SEASON_ID, SERVER_URL
 from shared.f1_mappings import get_track_name, get_tyre_name
 
 
@@ -112,9 +111,10 @@ def _extract_http_error(response: httpx.Response) -> str:
 
 
 def _agent_headers() -> dict[str, str]:
-    if not AGENT_SECRET_TOKEN:
+    token = config.get_agent_secret_token()
+    if not token:
         return {}
-    return {"X-Agent-Token": AGENT_SECRET_TOKEN}
+    return {"X-Agent-Token": token}
 
 
 def upload_race(payload: dict, observer: Observer | None = None) -> tuple[bool, int | None]:
@@ -173,6 +173,27 @@ def upload_race(payload: dict, observer: Observer | None = None) -> tuple[bool, 
                         pending_uploads=_pending_uploads_count(),
                     )
                     return True, race_id
+
+            if resp.status_code == 401:
+                # Token rotation: retrying with the same token is pointless.
+                # Surface to launcher so the user can re-enter a fresh token,
+                # and keep the race cached for the next attempt.
+                print("[UPLOAD] Agent token rejected (401)")
+                local_cache.mark_failure(
+                    session_uid,
+                    "Agent token rejected (401)",
+                    http_status=401,
+                )
+                _emit(
+                    observer,
+                    "auth_rejected",
+                    session_uid=session_uid,
+                    track_id=track_id,
+                    track_name=track_name,
+                    attempt=attempt,
+                    pending_uploads=_pending_uploads_count(),
+                )
+                return False, None
 
             error_message = _extract_http_error(resp)
             cache_entry = local_cache.mark_failure(
