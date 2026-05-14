@@ -2,6 +2,7 @@
 Маленький HTTP сервер внутри бота для приёма уведомлений от backend.
 Запускается в том же процессе что и бот (aiohttp).
 """
+import hmac
 import os
 from aiohttp import web
 from aiogram import Bot
@@ -19,10 +20,28 @@ def set_bot(bot: Bot) -> None:
     _bot_instance = bot
 
 
+def _verify_secret(request: web.Request) -> web.Response | None:
+    """Constant-time check of the shared X-Secret header.
+
+    Returns:
+        None on success — caller proceeds.
+        web.Response(503) when BOT_NOTIFY_SECRET is not configured server-side
+            (fail-closed; previously a `!=` comparison silently allowed empty
+            == empty matches when both env and header were unset).
+        web.Response(401) when the header is missing or wrong.
+    """
+    if not BOT_NOTIFY_SECRET:
+        return web.Response(status=503, text="BOT_NOTIFY_SECRET not configured")
+    received = request.headers.get("X-Secret", "")
+    if not received or not hmac.compare_digest(received, BOT_NOTIFY_SECRET):
+        return web.Response(status=401, text="Invalid bot secret")
+    return None
+
+
 async def handle_race_uploaded(request: web.Request) -> web.Response:
-    secret = request.headers.get("X-Secret", "")
-    if secret != BOT_NOTIFY_SECRET:
-        return web.Response(status=403)
+    deny = _verify_secret(request)
+    if deny is not None:
+        return deny
 
     data = await request.json()
     race_id   = data.get("race_id")
@@ -61,9 +80,9 @@ async def handle_race_uploaded(request: web.Request) -> web.Response:
 
 async def handle_debrief(request: web.Request) -> web.Response:
     """Личное сообщение с AI-дебрифом конкретному игроку."""
-    secret = request.headers.get("X-Secret", "")
-    if secret != BOT_NOTIFY_SECRET:
-        return web.Response(status=403)
+    deny = _verify_secret(request)
+    if deny is not None:
+        return deny
 
     if not _bot_instance:
         return web.Response(status=503)
@@ -92,9 +111,9 @@ async def handle_debrief(request: web.Request) -> web.Response:
 
 async def handle_contracts_ready(request: web.Request) -> web.Response:
     """Контракты сгенерированы — уведомляем игроков в личку."""
-    secret = request.headers.get("X-Secret", "")
-    if secret != BOT_NOTIFY_SECRET:
-        return web.Response(status=403)
+    deny = _verify_secret(request)
+    if deny is not None:
+        return deny
 
     if not _bot_instance:
         return web.Response(status=503)
