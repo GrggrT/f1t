@@ -1,7 +1,7 @@
 """Reusable auth dependencies for FastAPI endpoints."""
 import os
 import hmac
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -71,16 +71,28 @@ def require_system_admin(user: WebUser) -> WebUser:
 
 
 async def verify_agent_token(request: Request) -> bool:
-    """Verify agent token from header or query param. Raises 401 if invalid."""
+    """Verify agent token from header or query param.
+
+    Fails closed: if AGENT_SECRET_TOKEN is not configured on the server,
+    every agent-protected endpoint returns 503. The previous behavior
+    silently allowed all agent calls when the env was missing, which is a
+    Sprint 1 security regression we are explicitly closing here.
+
+    Constant-time comparison via hmac.compare_digest prevents timing leaks.
+    """
     secret = _agent_secret_token()
     if not secret:
-        # If no token configured, allow (backward compatibility during migration)
-        return True
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Agent authentication not configured. Set AGENT_SECRET_TOKEN.",
+        )
 
     token = (
         request.headers.get("X-Agent-Token", "")
         or request.query_params.get("agent_token", "")
     )
-    if not token or not hmac.compare_digest(token, secret):
+    if not token:
+        raise HTTPException(401, "Missing X-Agent-Token header")
+    if not hmac.compare_digest(token, secret):
         raise HTTPException(401, "Invalid agent token")
     return True
