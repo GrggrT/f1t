@@ -61,24 +61,33 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider === "google") {
+        // PR 1.5: backend verifies the Google id_token JWT directly with
+        // Google's keys. Sending `google_id`/`email` plaintext like before
+        // let anyone forge an admin login. If id_token is missing or the
+        // backend rejects it, fail the sign-in.
+        const idToken = (account as { id_token?: string }).id_token
+        if (!idToken) {
+          console.error("[auth] No id_token from Google account")
+          return false
+        }
         try {
           const r = await fetch(`${API}/api/web/google`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              google_id: account.providerAccountId,
-              email:     user.email,
-              name:      user.name,
-              picture:   user.image,
-            }),
+            body: JSON.stringify({ id_token: idToken }),
           })
-          if (r.ok) {
-            const data = await r.json()
-            user.id                      = String(data.id)
-            ;(user as any).player_id     = data.player_id ?? null
-            ;(user as any).backendToken  = data.token ?? null
+          if (!r.ok) {
+            console.error("[auth] Backend rejected Google id_token", r.status)
+            return false
           }
-        } catch {}
+          const data = await r.json()
+          user.id                      = String(data.id)
+          ;(user as any).player_id     = data.player_id ?? null
+          ;(user as any).backendToken  = data.token ?? null
+        } catch (err) {
+          console.error("[auth] Network error during Google sign-in", err)
+          return false
+        }
       }
       return true
     },

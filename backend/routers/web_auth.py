@@ -19,6 +19,9 @@ import bcrypt
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
+
 SYSTEM_ADMIN_EMAILS = set(
     e.strip().lower()
     for e in os.getenv("SYSTEM_ADMIN_EMAILS", "gregorysky04i@gmail.com").split(",")
@@ -168,45 +171,74 @@ async def me_by_token(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 # ── Google OAuth ──────────────────────────────────────────────────────────────
+#
+# PR 1.5: this endpoint used to take {google_id, email, name, picture}
+# from the frontend on faith. That meant any anonymous client could POST
+# {google_id: "anything", email: "<admin-email>"} and become a system_admin
+# whenever the email matched SYSTEM_ADMIN_EMAILS. The fix is to require a
+# Google-signed id_token JWT, verify it with Google's keys, and pull the
+# trustworthy identity claims out of the verified payload.
+#
+# We accept the legacy shape only if it's wrapped: a payload containing
+# `google_id` (but no `id_token`) returns 422 so old clients fail fast.
 
-class GoogleReq(BaseModel):
-    google_id: str
-    email:     str | None = None
-    name:      str
-    picture:   str | None = None
+class GoogleLoginReq(BaseModel):
+    id_token: str
+
 
 @router.post("/google")
-async def web_google(req: GoogleReq, db: AsyncSession = Depends(get_db)):
-    # Ищем по google_id
+async def web_google(req: GoogleLoginReq, db: AsyncSession = Depends(get_db)):
+    # Read at request time, not module-import time, so test env overrides
+    # and rotated client IDs land immediately.
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    if not google_client_id:
+        raise HTTPException(503, "Google login not configured on server")
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            req.id_token,
+            google_requests.Request(),
+            google_client_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(401, f"Invalid Google id_token: {exc}")
+
+    if not idinfo.get("email_verified", False):
+        raise HTTPException(401, "Email not verified by Google")
+
+    google_id = idinfo["sub"]
+    email_lower = (idinfo.get("email") or "").lower()
+    name = idinfo.get("name") or email_lower or "Unknown"
+    picture = idinfo.get("picture")
+
     user = (await db.execute(
-        select(WebUser).where(WebUser.google_id == req.google_id)
+        select(WebUser).where(WebUser.google_id == google_id)
     )).scalars().first()
 
-    # Или по email (объединяем аккаунты)
-    if not user and req.email:
+    if not user and email_lower:
         user = (await db.execute(
-            select(WebUser).where(WebUser.email == req.email.lower())
+            select(WebUser).where(WebUser.email == email_lower)
         )).scalars().first()
 
     if user:
-        user.google_id = req.google_id
-        if req.picture and not user.picture:
-            user.picture = req.picture
+        user.google_id = google_id
+        if picture and not user.picture:
+            user.picture = picture
     else:
-        email_lower = req.email.lower() if req.email else None
         user = WebUser(
-            google_id=req.google_id,
-            email=email_lower,
-            name=req.name,
-            picture=req.picture,
-            is_system_admin=email_lower in SYSTEM_ADMIN_EMAILS if email_lower else False,
+            google_id=google_id,
+            email=email_lower or None,
+            name=name,
+            picture=picture,
+            # System admin only when Google itself confirms the email AND
+            # the email is in our admin allow-list.
+            is_system_admin=bool(email_lower) and email_lower in SYSTEM_ADMIN_EMAILS,
         )
         db.add(user)
 
     await db.commit()
     await db.refresh(user)
 
-    # Автопривязка к Player по steam_id64
     if not user.player_id and user.steam_id64:
         p = (await db.execute(
             select(Player).where(Player.steam_id64 == user.steam_id64)
