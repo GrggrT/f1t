@@ -31,6 +31,7 @@ from sqlalchemy import select
 
 from backend.db.base import get_db
 from backend.models.models import WebUser, Player
+from backend.services.auth_dependencies import get_current_user
 from backend.services.steam_resolver import resolve_steam_profile
 from backend.services.jwt_auth import create_token, get_user_id_from_token
 
@@ -362,10 +363,17 @@ class LinkPlayerReq(BaseModel):
     player_id: int
 
 @router.post("/link-player")
-async def link_player(req: LinkPlayerReq, request: Request, db: AsyncSession = Depends(get_db)):
-    from backend.services.auth_dependencies import get_current_user
-    user = await get_current_user(request, db)
+async def link_player(
+    req: LinkPlayerReq,
+    user: WebUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bind the caller's WebUser to a Player row.
 
+    Ownership check: the dependency injects the WebUser from the Bearer
+    token, and we only ever mutate that user's player_id — so there is
+    no way to link another user's account.
+    """
     player = (await db.execute(
         select(Player).where(Player.id == req.player_id)
     )).scalars().first()
@@ -385,10 +393,12 @@ class LauncherAuthReq(BaseModel):
     poll_id: str
 
 @router.post("/launcher/auth")
-async def launcher_auth_complete(req: LauncherAuthReq, request: Request, db: AsyncSession = Depends(get_db)):
+async def launcher_auth_complete(
+    req: LauncherAuthReq,
+    user: WebUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Website calls this after user logs in, to provide token to launcher."""
-    from backend.services.auth_dependencies import get_current_user
-    user = await get_current_user(request, db)
     token = create_token(user.id)
     result = _to_dict(user)
     result["token"] = token

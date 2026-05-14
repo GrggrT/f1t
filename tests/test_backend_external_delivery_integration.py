@@ -179,6 +179,7 @@ class BackendExternalDeliveryIntegrationTests(BackendIntegrationCase):
                 response = self.client.post(
                     "/api/engineer/ask",
                     json={"question": "Where am I losing time?", "system_prompt": "x" * 60},
+                    headers=self.auth_headers(self.make_system_admin_token("engineer-proxy")),
                 )
 
         self.assertEqual(response.status_code, 200, response.text)

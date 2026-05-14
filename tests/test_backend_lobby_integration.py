@@ -66,7 +66,10 @@ class BackendLobbyIntegrationTests(BackendIntegrationCase):
         self.assertEqual(detail_guest.json()["your_role"], "member")
         self.assertIsNone(detail_guest.json()["invite_code"])
 
-        members = self.client.get(f"/api/lobby/{lobby['id']}/members")
+        members = self.client.get(
+            f"/api/lobby/{lobby['id']}/members",
+            headers=self.auth_headers(guest["token"]),
+        )
         self.assertEqual(members.status_code, 200, members.text)
         self.assertEqual(len(members.json()), 2)
 

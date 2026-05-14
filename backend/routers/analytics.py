@@ -17,7 +17,9 @@ from backend.db.base import get_db
 from backend.models.models import (
     Player, Race, RaceResult, RaceEvent, Season,
     ChampionshipStanding, PlayerRating, RatingHistory, PlayerAchievement, Achievement,
+    WebUser,
 )
+from backend.services.auth_dependencies import get_current_user
 
 router = APIRouter(prefix="/api", tags=["analytics"])
 
@@ -427,8 +429,12 @@ class PredictRequest(BaseModel):
 
 
 @router.post("/predict/{season_id}")
-async def predict_race(season_id: int, req: PredictRequest = PredictRequest(),
-                       db: AsyncSession = Depends(get_db)):
+async def predict_race(
+    season_id: int,
+    req: PredictRequest = PredictRequest(),
+    db: AsyncSession = Depends(get_db),
+    _: WebUser = Depends(get_current_user),
+):
     """AI prediction for next race using Groq."""
     import os, httpx
 

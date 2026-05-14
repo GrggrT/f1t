@@ -396,3 +396,32 @@ class BackendIntegrationCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
+
+    def make_system_admin_token(self, prefix: str = "admin") -> str:
+        """Register a fresh user, promote to system_admin, return Bearer token.
+
+        Used by integration tests that hit endpoints behind system_admin or
+        moderator gates — system admins bypass the latter by design (see
+        backend/services/auth_helpers.py).
+        """
+        u = self.register_user(prefix)
+
+        async def _promote(session):
+            from sqlalchemy import select
+            from backend.models.models import WebUser
+
+            row = (await session.execute(
+                select(WebUser).where(WebUser.id == u["id"])
+            )).scalars().first()
+            assert row is not None, f"WebUser id={u['id']} missing after register"
+            row.is_system_admin = True
+            await session.commit()
+
+        self.harness.db_call(_promote)
+
+        login = self.client.post(
+            "/api/web/launcher/login",
+            json={"email": u["email"], "password": "Password123!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        return login.json()["token"]

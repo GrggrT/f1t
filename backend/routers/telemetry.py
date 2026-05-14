@@ -14,8 +14,8 @@ from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.db.base import get_db
-from backend.models.models import LapTelemetry, RaceResult, RaceSessionHistory, Race
-from backend.services.auth_dependencies import verify_agent_token
+from backend.models.models import LapTelemetry, RaceResult, RaceSessionHistory, Race, WebUser
+from backend.services.auth_dependencies import get_current_user, verify_agent_token
 
 router = APIRouter(prefix="/api/telemetry", tags=["telemetry"])
 
@@ -791,7 +791,12 @@ async def throttle_analysis(race_id: int, db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.post("/race-analysis/{race_id}/debrief")
-async def race_debrief(race_id: int, body: dict, db: AsyncSession = Depends(get_db)):
+async def race_debrief(
+    race_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _: WebUser = Depends(get_current_user),
+):
     """AI race debrief with corner-specific telemetry analysis."""
     import os, httpx
 

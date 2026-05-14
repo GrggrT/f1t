@@ -190,6 +190,7 @@ class BackendTelemetryIntegrationTests(BackendIntegrationCase):
         return {
             "race_id": race_id,
             "web_user_id": owner["id"],
+            "web_user_token": owner["token"],
             "hero_player_id": hero_player_id,
         }
 
@@ -261,6 +262,7 @@ class BackendTelemetryIntegrationTests(BackendIntegrationCase):
                 debrief = self.client.post(
                     f"/api/telemetry/race-analysis/{race_id}/debrief",
                     json={"web_user_id": seeded["web_user_id"], "question": "Разбери гонку"},
+                    headers=self.auth_headers(seeded["web_user_token"]),
                 )
 
         self.assertEqual(debrief.status_code, 200, debrief.text)

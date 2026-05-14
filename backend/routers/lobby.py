@@ -26,6 +26,7 @@ from sqlalchemy import select, func
 
 from backend.db.base import get_db
 from backend.services.auth_dependencies import get_current_user, get_current_user_optional
+from backend.services.auth_helpers import require_lobby_member
 from backend.models.models import (
     Lobby, LobbyMember, Season, WebUser, Player,
     Race, RaceResult, ChampionshipStanding,
@@ -322,7 +323,11 @@ async def leave_lobby(lobby_id: int, user: WebUser = Depends(get_current_user), 
 # ── Members ───────────────────────────────────────────────────────────────────
 
 @router.get("/{lobby_id}/members")
-async def list_members(lobby_id: int, db: AsyncSession = Depends(get_db)):
+async def list_members(
+    lobby_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_lobby_member),
+):
     await _get_lobby_or_404(lobby_id, db)
     res = await db.execute(
         select(LobbyMember, WebUser.name.label("uname"), WebUser.picture.label("upic"))
@@ -457,7 +462,11 @@ async def create_season(lobby_id: int, req: CreateSeasonReq, user: WebUser = Dep
 
 
 @router.get("/{lobby_id}/seasons")
-async def list_lobby_seasons(lobby_id: int, db: AsyncSession = Depends(get_db)):
+async def list_lobby_seasons(
+    lobby_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_lobby_member),
+):
     await _get_lobby_or_404(lobby_id, db)
     res = await db.execute(
         select(Season).where(Season.lobby_id == lobby_id).order_by(Season.id.desc())
@@ -487,6 +496,7 @@ async def get_engineer_context(
     season_id: int | None = None,
     user: WebUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_lobby_member),
 ):
     """Get pilot context for AI engineer. Optional season_id to scope data."""
     await _get_lobby_or_404(lobby_id, db)
@@ -560,7 +570,13 @@ class EngineerAskReq(BaseModel):
 
 
 @router.post("/{lobby_id}/engineer/ask")
-async def ask_engineer(lobby_id: int, req: EngineerAskReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def ask_engineer(
+    lobby_id: int,
+    req: EngineerAskReq,
+    user: WebUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_lobby_member),
+):
     """AI engineer: works with lobby's season data."""
     await _get_lobby_or_404(lobby_id, db)
     if not user.player_id:

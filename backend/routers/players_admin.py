@@ -12,7 +12,8 @@ from pydantic import BaseModel
 
 import os
 from backend.db.base import get_db
-from backend.models.models import Player, RaceResult
+from backend.models.models import Player, RaceResult, WebUser
+from backend.services.auth_helpers import require_system_admin_dep
 from backend.services.player_mapper import add_steam_name, find_player_by_steam_name
 from backend.services.standings_service import recalc_standings
 
@@ -36,7 +37,7 @@ class MapSteamRequest(BaseModel):
 
 
 @router.post("/register")
-async def register_player(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register_player(req: RegisterRequest, db: AsyncSession = Depends(get_db), _: WebUser = Depends(require_system_admin_dep)):
     # Если telegram_id уже есть — возвращаем существующий профиль (идемпотентно)
     if req.telegram_id:
         existing_res = await db.execute(select(Player).where(Player.telegram_id == req.telegram_id))
@@ -66,7 +67,7 @@ async def get_player_by_telegram(telegram_id: int, db: AsyncSession = Depends(ge
 
 
 @router.post("/add_steam")
-async def add_steam_endpoint(req: AddSteamRequest, db: AsyncSession = Depends(get_db)):
+async def add_steam_endpoint(req: AddSteamRequest, db: AsyncSession = Depends(get_db), _: WebUser = Depends(require_system_admin_dep)):
     result = await db.execute(select(Player).where(Player.telegram_id == req.telegram_id))
     player = result.scalars().first()
     if not player:
@@ -117,7 +118,7 @@ async def add_steam_endpoint(req: AddSteamRequest, db: AsyncSession = Depends(ge
 
 
 @router.post("/map_steam")
-async def map_steam(req: MapSteamRequest, db: AsyncSession = Depends(get_db)):
+async def map_steam(req: MapSteamRequest, db: AsyncSession = Depends(get_db), _: WebUser = Depends(require_system_admin_dep)):
     """
     После того как бот спросил «кто такой X?» и пользователь выбрал —
     связываем steam_name с player_id и пересчитываем standing для этой гонки.
@@ -158,7 +159,7 @@ class UpdatePlayerRequest(BaseModel):
 
 
 @router.patch("/{player_id}")
-async def update_player(player_id: int, req: UpdatePlayerRequest, db: AsyncSession = Depends(get_db)):
+async def update_player(player_id: int, req: UpdatePlayerRequest, db: AsyncSession = Depends(get_db), _: WebUser = Depends(require_system_admin_dep)):
     result = await db.execute(select(Player).where(Player.id == player_id))
     player = result.scalars().first()
     if not player:

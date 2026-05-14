@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from backend.db.base import get_db
-from backend.models.models import Season, Race, RaceResult, Player, ChampionshipStanding
+from backend.models.models import Season, Race, RaceResult, Player, ChampionshipStanding, WebUser
+from backend.services.auth_dependencies import get_current_user
 
 router = APIRouter(prefix="/api/seasons", tags=["seasons"])
 
@@ -79,7 +80,11 @@ class AssistantRequest(BaseModel):
 
 
 @router.post("/assistant")
-async def personal_assistant(req: AssistantRequest, db: AsyncSession = Depends(get_db)):
+async def personal_assistant(
+    req: AssistantRequest,
+    db: AsyncSession = Depends(get_db),
+    _: WebUser = Depends(get_current_user),
+):
     """Персональный AI-ассистент — анализирует общий перформанс пользователя по всем сезонам."""
     # Собираем статистику по всем сезонам
     player = await db.get(Player, req.player_id)

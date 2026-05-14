@@ -142,7 +142,11 @@ class BackendContractsIntegrationTests(BackendIntegrationCase):
                 },
                 clear=False,
             ):
-                generate_response = self.client.post(f"/api/contracts/generate/{seeded['current_season_id']}")
+                admin_headers = self.auth_headers(self.make_system_admin_token("contracts-admin"))
+                generate_response = self.client.post(
+                    f"/api/contracts/generate/{seeded['current_season_id']}",
+                    headers=admin_headers,
+                )
                 offers_response = self.client.get(f"/api/contracts/{seeded['current_season_id']}")
 
         self.assertEqual(generate_response.status_code, 200, generate_response.text)
@@ -196,6 +200,7 @@ class BackendContractsIntegrationTests(BackendIntegrationCase):
                 "team_id": selected_offer["team_id"],
                 "new_season_id": seeded["next_season_id"],
             },
+            headers=self.auth_headers(self.make_system_admin_token("contracts-accept")),
         )
         self.assertEqual(accept_response.status_code, 200, accept_response.text)
         self.assertEqual(accept_response.json()["team_name"], selected_offer["team_name"])
