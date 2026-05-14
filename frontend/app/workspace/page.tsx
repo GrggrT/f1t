@@ -232,11 +232,7 @@ export default function WorkspacePage() {
                   Открыть системную админку
                 </Link>
               ) : null}
-              {activeSeason ? (
-                <Link href={`/season/${activeSeason.season_id}/manage`} className="ui-button-tertiary w-full">
-                  Открыть управление сезоном
-                </Link>
-              ) : null}
+              {/* "Открыть управление сезоном" button hidden — see PR 1.2.5; manage page is stubbed. */}
             </div>
           </div>
         </div>

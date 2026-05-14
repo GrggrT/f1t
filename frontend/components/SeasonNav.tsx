@@ -52,7 +52,8 @@ export function SeasonNav({ seasonId, seasonName, status, lobbyId }: Props) {
     { href: `${base}/calendar`, label: "Календарь" },
     { href: `${base}/live`, label: "Live" },
     ...(session?.user ? [{ href: `${base}/engineer`, label: "Инженер" }] : []),
-    ...(role === "admin" || role === "moderator" ? [{ href: `${base}/manage`, label: "Управление" }] : []),
+    // "Управление" tab hidden — manage UI is stubbed per PR 1.2.5
+    // until Sprint 4 ships the redesigned season-management page.
   ]
 
   return (

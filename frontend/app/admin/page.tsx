@@ -328,9 +328,7 @@ export default function SystemAdminPage() {
                     </td>
                     <td>
                       <div className="flex justify-end gap-2">
-                        <Link href={`/season/${season.id}/manage`} className="ui-button-tertiary">
-                          Управление
-                        </Link>
+                        {/* "Управление" link hidden — see PR 1.2.5; manage page is stubbed. */}
                         <button onClick={() => generateContracts(season.id)} disabled={loading} className="ui-button-secondary h-10 px-3">
                           Контракты
                         </button>
