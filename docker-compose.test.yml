@@ -36,6 +36,13 @@ services:
       POSTGRES_USER: test
       POSTGRES_DB: test
       POSTGRES_PASSWORD: test
+      # Used by tests/backend_integration_support.py PostgresConfig.from_repo().
+      # Without these the integration tests fall back to 127.0.0.1 (which inside
+      # the test container is the container itself, not the host).
+      BACKEND_TEST_POSTGRES_HOST: postgres-test
+      BACKEND_TEST_POSTGRES_PORT: "5432"
+      BACKEND_TEST_POSTGRES_USER: test
+      BACKEND_TEST_POSTGRES_PASSWORD: test
     volumes:
       - ./backend:/app/backend:ro
       - ./tests:/app/tests:ro

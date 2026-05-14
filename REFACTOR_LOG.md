@@ -194,3 +194,77 @@ No file modifications in this PR per acceptance criterion 3. Categorization (fix
 Initial read of options for PR 0.6.2 — for the council, not a decision:
 - **Agent-coupled tests (6 files):** these test agent runtime / delivery / postmortem behavior. Options: (a) add `COPY agent/ ./agent/` to `backend/Dockerfile` only when `INCLUDE_DEV=true`; (b) create a separate `agent-test` compose service; (c) move tests to `tests/agent/` and exclude from backend-test image. Option (a) is the lightest touch but couples agent code to backend image — minor cost given single-user setup.
 - **`f1` package test (1 file):** without identifying the intended package, either declare in `requirements-dev.txt` once identified, or quarantine/delete if `test_packet_replay_harness.py` is obsolete tooling.
+
+---
+
+## Sprint 0.6.2: Test run triage (date: 2026-05-14)
+
+Command: `./scripts/run_tests.sh --continue-on-collection-errors --tb=line -p no:randomly`
+Image: same backend-test image as 0.6.1.
+
+### Prerequisite infra fix (single-line config change, no test files touched)
+
+`tests/backend_integration_support.py:PostgresConfig.from_repo()` reads `BACKEND_TEST_POSTGRES_*` env vars or falls back to `repo_env.get("POSTGRES_USER", "f1league")` from `.env`. Inside the test container `.env` is not mounted (intentionally — we don't want prod secrets in test image), so the fallback hits the literal default `f1league` and tries to connect to `127.0.0.1:5432`, which inside the container is the container itself.
+
+Added to `docker-compose.test.yml` (PR -0.5.2 follow-up):
+```yaml
+BACKEND_TEST_POSTGRES_HOST: postgres-test
+BACKEND_TEST_POSTGRES_PORT: "5432"
+BACKEND_TEST_POSTGRES_USER: test
+BACKEND_TEST_POSTGRES_PASSWORD: test
+```
+
+With this in place, all 21 collectible tests run successfully.
+
+### Run result
+
+```
+21 passed, 7 errors in 19.82s
+```
+
+### Categorization
+
+| State | Count | Tests |
+|-------|------:|-------|
+| ✅ **PASS** | 21 | All collected tests passing (auth, contracts, contract-smoke, external-delivery, lobby, race-submit, telemetry, ws-concurrency, healthcheck, race-submit-idempotency) |
+| ⚠️ **SKIP** | 0 | none |
+| 🔴 **FAIL** | 0 | none |
+| 💀 **ERROR** | 7 | All 7 from PR 0.6.1 — collection errors only, no runtime errors |
+
+### Per-file PASS detail
+
+| File | Tests | Style |
+|------|------:|-------|
+| `tests/test_backend_auth_integration.py` | 2 ✅ | UnitTestCase |
+| `tests/test_backend_contract_smoke.py` | 1 ✅ | UnitTestCase |
+| `tests/test_backend_contracts_integration.py` | 2 ✅ | UnitTestCase |
+| `tests/test_backend_external_delivery_integration.py` | 2 ✅ | UnitTestCase (uses captured HTTP server for Bot/Groq) |
+| `tests/test_backend_lobby_integration.py` | 2 ✅ | UnitTestCase |
+| `tests/test_backend_race_submit_integration.py` | 3 ✅ | UnitTestCase |
+| `tests/test_backend_telemetry_integration.py` | 2 ✅ | UnitTestCase |
+| `tests/test_backend_ws_and_concurrency_integration.py` | 4 ✅ | UnitTestCase (websockets concurrency) |
+| `tests/test_healthcheck.py` | 1 ✅ | async pytest (new, PR 0.2) |
+| `tests/test_race_submit_idempotency.py` | 2 ✅ | UnitTestCase |
+| **Total** | **21** | |
+
+### Triage decisions (ERRORs only)
+
+| File | Category | Plan |
+|------|----------|------|
+| `tests/test_packet_replay_harness.py` | **Easy fix** | Add `f1-packets==2025.1.1` to `backend/requirements-dev.txt` (the `f1` package is `f1-packets` declared in `agent/requirements.txt`). |
+| `tests/test_upload_cache.py` | **Easy fix** | Make `agent/` importable in backend-test image (volume bind-mount `./agent:/app/agent:ro`). Imports `agent.local_cache`, `agent.uploader` — both lightweight, no UI deps. |
+| `tests/test_telemetry_pipeline_integrity.py` | **Easy fix** | Same — `agent.local_cache`, `agent.telemetry_delivery`, `agent.uploader`. Lightweight. |
+| `tests/test_postmortem_tooling.py` | **Easy fix** | Same — `agent.postmortem`. Lightweight. |
+| `tests/test_personal_session_sync.py` | **Easy fix** | Same — `agent.personal_session_sync`. Lightweight. |
+| `tests/test_launcher_delivery_recovery.py` | **Easy fix** | Same — `agent.telemetry_delivery`, `agent.uploader`. Lightweight. |
+| `tests/test_agent_runtime_lifecycle.py` | **Easy-to-Moderate** | Imports `agent.main.F1Agent`. `agent/main.py` may transitively pull in `agent/launcher.py` and Windows UI deps (`pystray`, `pywebview`). If transitive imports fail in Linux test container, **quarantine** with `@pytest.mark.skipif(sys.platform != "win32")` and TODO. Verify first; cheap to discover. |
+
+### Plan summary
+
+All 7 → **Easy fix** (likely 1 verification round + 1 quarantine on `test_agent_runtime_lifecycle.py` if UI deps prove troublesome). **No tests to delete.** **No tests to quarantine outright** without verification.
+
+Concrete PR 0.6.3 actions:
+1. Add to `backend/requirements-dev.txt`: `f1-packets==2025.1.1`, `websockets==12.0` (used by ws_client.py).
+2. Add to `docker-compose.test.yml` `backend-test` service: `volumes: - ./agent:/app/agent:ro`.
+3. Run tests. If `test_agent_runtime_lifecycle.py` still fails on missing `pystray`/`pywebview`, quarantine just that one with `@pytest.mark.skipif(sys.platform != "win32", reason="depends on Windows UI stack")` and TODO link.
+4. Re-run: expect either 28 PASS / 0 errors / 1 skip, or 28 PASS / 0 errors / 0 skips.
