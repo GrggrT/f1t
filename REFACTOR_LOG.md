@@ -343,10 +343,12 @@ Process notes:
 - Verified after rotation: `/healthz` 200, `/readyz` 200, smoke-test user re-login → backend token → `GET /api/practice/sessions` 200, automated backup wrote `dump-20260514-202844.pgc` (146 KB) immediately on cold-start with the new password. 56/56 tests still passing.
 - `.env.pre-pr14` preserved temporarily for one-shot recovery; contains the previous (compromised) values and should be deleted once the operator is confident the rotation is durable.
 
-External rotations **still pending** (these require the operator to revoke and re-issue in vendor consoles — no AI access):
+External rotations (vendor consoles):
 
-1. **`BOT_TOKEN`** — @BotFather → `/revoke` for the current bot → `/token` → new value → paste into `.env`.
-2. **`GROQ_API_KEY`** — [console.groq.com](https://console.groq.com/keys) → revoke + create a new key → paste.
-3. **`GOOGLE_CLIENT_SECRET`** — [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials → "Веб-сайт Лиги Формулы-1" → reset secret → paste.
+1. **`BOT_TOKEN`** — **still pending**. @BotFather → `/revoke` for `@F1RaceControll_Bot` → `/token` → new value → paste into `.env` → `docker compose up -d --force-recreate bot`. Operator must do this manually.
 
-After each: `docker compose up -d --force-recreate <service>` (bot / backend / frontend respectively).
+2. **`GROQ_API_KEY`** — **rotated** via Chrome MCP. Created new key `f1league-pr14` (`gsk_5a...`, 56 chars) on [console.groq.com/keys](https://console.groq.com/keys), wrote to `.env`, force-recreated backend+bot, smoke-tested `POST /api/engineer/ask` (live response from new key — 200, "OK" content), then revoked old `f1league` key (`gsk_...8Kxa`). Console shows only `f1league-pr14` + the unrelated `pred1` key.
+
+3. **`GOOGLE_CLIENT_SECRET`** — **rotated** via Chrome MCP. On [console.cloud.google.com](https://console.cloud.google.com) → F1 League → APIs & Services → Credentials → "F1 League Web" client, added a second client secret (`****wQ14`) without disrupting the existing one. Downloaded the JSON, extracted the new secret, wrote to `.env` (verified `GOCSPX-` prefix, len 35), force-recreated frontend (container env confirmed `GOCSPX-` prefix). Live Google-login OAuth flow couldn't be exercised in MCP (the only authorized JS origin is `http://192.168.0.114.nip.io:3000`, which Chrome's private-network-access policy blocks for the extension). The old secret (`****kjhi`) is left **Enabled** on GCP as a grace-period fallback — operator should hit **Disable** once a real Google login on `192.168.0.114.nip.io:3000` succeeds with the new secret.
+
+Recovery: `.env.pre-pr14` (kept in repo root, gitignored) still contains the previous values of the four self-managed secrets — useful for emergency rollback in the next ~24h. Delete after the operator is confident the rotation is durable (`rm .env.pre-pr14`).
