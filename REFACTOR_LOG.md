@@ -144,3 +144,53 @@
 - [x] PR 0.1: automated daily backup
 - [x] PR 0.2: backend healthcheck + log rotation
 - [x] PR 0.3: baseline backup + git tag + remote setup
+
+---
+
+## Sprint 0.6.1: Test collection triage (date: 2026-05-14)
+
+Command: `./scripts/run_tests.sh --collect-only --tb=short`
+Image: `backend-test` built with `INCLUDE_DEV=true` (pytest 8.x + pytest-asyncio + pytest-timeout + pytest-mock).
+Result: **21 tests collected across 9 modules, 7 collection errors.**
+
+### Collected modules (no import errors)
+
+| Module | Tests | Style |
+|--------|------:|-------|
+| `tests/test_backend_auth_integration.py` | 2 | UnitTestCase (`BackendAuthIntegrationTests`) |
+| `tests/test_backend_contract_smoke.py` | 1 | UnitTestCase (`BackendContractSmokeTests`) |
+| `tests/test_backend_contracts_integration.py` | 2 | UnitTestCase (`BackendContractsIntegrationTests`) |
+| `tests/test_backend_external_delivery_integration.py` | 2 | UnitTestCase (`BackendExternalDeliveryIntegrationTests`) |
+| `tests/test_backend_lobby_integration.py` | 2 | UnitTestCase (`BackendLobbyIntegrationTests`) |
+| `tests/test_backend_race_submit_integration.py` | 3 | UnitTestCase (`BackendRaceSubmitIntegrationTests`) |
+| `tests/test_backend_telemetry_integration.py` | 2 | UnitTestCase (`BackendTelemetryIntegrationTests`) |
+| `tests/test_backend_ws_and_concurrency_integration.py` | 4 | UnitTestCase (`BackendWsAndConcurrencyIntegrationTests`) |
+| `tests/test_healthcheck.py` | 1 | Coroutine (async, added in PR 0.2) |
+| `tests/test_race_submit_idempotency.py` | 2 | UnitTestCase (`RaceSubmitIdempotencyTests`) |
+
+Total: 10 modules → **21 collectible tests**. Most are `unittest.TestCase` style; only `test_healthcheck.py` (new) uses async pytest-style.
+
+### Collection errors (file → first ImportError line)
+
+| File | Cause |
+|------|-------|
+| `tests/test_agent_runtime_lifecycle.py` | `from agent.main import F1Agent` → `ModuleNotFoundError: No module named 'agent'` |
+| `tests/test_launcher_delivery_recovery.py` | `from agent import telemetry_delivery, uploader` → `ModuleNotFoundError: No module named 'agent'` |
+| `tests/test_packet_replay_harness.py` | `import f1.packets as f1_packets` → `ModuleNotFoundError: No module named 'f1'` |
+| `tests/test_personal_session_sync.py` | `from agent.personal_session_sync import _build_laps, _select_vehicle_index, sync_personal_session` → `ModuleNotFoundError: No module named 'agent'` |
+| `tests/test_postmortem_tooling.py` | `from agent.postmortem import build_postmortem_report, quarantine_orphaned_telemetry` → `ModuleNotFoundError: No module named 'agent'` |
+| `tests/test_telemetry_pipeline_integrity.py` | `from agent import local_cache, telemetry_delivery, uploader` → `ModuleNotFoundError: No module named 'agent'` |
+| `tests/test_upload_cache.py` | `from agent import local_cache, uploader` → `ModuleNotFoundError: No module named 'agent'` |
+
+### Root cause (factual only — no fix attempted per PR 0.6.1 scope)
+
+- 6 of 7 errors → missing `agent` package on the Python path inside the `backend-test` image. The Dockerfile (`backend/Dockerfile`) only copies `backend/` and `shared/` into `/app/`; `agent/` is intentionally not in the backend container (agent runs on a separate Windows machine).
+- 1 of 7 errors → missing `f1` package. `f1` is not present anywhere in the repo (verified via `find . -type d -name "f1"` — no matches outside node_modules) and is not in `backend/requirements.txt` nor `backend/requirements-dev.txt`. Likely a third-party PyPI package (`f1-2021`, `f1-2024`, `f1-telemetry`, or similar) that someone expected as a dev dependency but never declared. No additional grep evidence as to which one.
+
+### Triage decisions deferred to PR 0.6.2/0.6.3
+
+No file modifications in this PR per acceptance criterion 3. Categorization (fix / quarantine / delete) happens in PR 0.6.2.
+
+Initial read of options for PR 0.6.2 — for the council, not a decision:
+- **Agent-coupled tests (6 files):** these test agent runtime / delivery / postmortem behavior. Options: (a) add `COPY agent/ ./agent/` to `backend/Dockerfile` only when `INCLUDE_DEV=true`; (b) create a separate `agent-test` compose service; (c) move tests to `tests/agent/` and exclude from backend-test image. Option (a) is the lightest touch but couples agent code to backend image — minor cost given single-user setup.
+- **`f1` package test (1 file):** without identifying the intended package, either declare in `requirements-dev.txt` once identified, or quarantine/delete if `test_packet_replay_harness.py` is obsolete tooling.
