@@ -1,0 +1,24 @@
+# Staging override. Used alongside docker-compose.yml via
+#   docker compose -f docker-compose.yml -f docker-compose.staging.override.yml ...
+# and COMPOSE_PROJECT_NAME=f1t-staging so containers/networks/volumes live
+# in a fully separate namespace from production.
+#
+# !override is required because Compose merges list attributes (ports, volumes)
+# by appending — without !override the staging postgres would inherit the
+# production host port 5432, conflicting with the running production stack.
+
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:5433:5432"
+    volumes: !override
+      - postgres_staging_data:/var/lib/postgresql/data
+
+  backend:
+    # NB: 8001 is taken by the production `bot` service, so staging backend
+    # uses 8002 to coexist with a running production stack.
+    ports: !override
+      - "127.0.0.1:8002:8000"
+
+volumes:
+  postgres_staging_data:

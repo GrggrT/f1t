@@ -1,0 +1,51 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+postgres_data/
+
+# Agent build artifacts
+agent/dist/
+agent/build/
+agent/build_tmp/
+agent/installer_output/
+*.exe
+*.spec
+*.pyz
+*.toc
+
+# Temp debug scaffolding (March-era)
+tmp_*
+
+# Logs
+*.log
+
+# Postgres dumps (keep dir + .gitkeep, ignore actual backups)
+backups/*.pgc
+backups/*.err

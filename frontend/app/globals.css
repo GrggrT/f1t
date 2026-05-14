@@ -1,0 +1,252 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #0a0d11;
+  --color-surface-1: #10151b;
+  --color-surface-2: #151b23;
+  --color-surface-3: #1b232e;
+  --color-border: #27313d;
+  --color-border-strong: #344150;
+  --color-text-primary: #f2f5f7;
+  --color-text-secondary: #b2bcc8;
+  --color-text-muted: #7e8997;
+  --color-accent: #c65445;
+  --color-amber: #d7a443;
+  --color-success: #2fb177;
+  --color-info: #6ea2ff;
+  --color-danger: #c65445;
+  --radius-compact: 8px;
+  --radius-default: 12px;
+  --radius-large: 16px;
+  --radius-feature: 24px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    background: var(--color-bg);
+    color-scheme: dark;
+  }
+
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at top left, rgba(198, 84, 69, 0.08), transparent 28%),
+      linear-gradient(180deg, #0d1218 0%, #0a0d11 40%, #090c10 100%);
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    font-feature-settings: "ss01" 1, "cv02" 1;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 144px 144px;
+    mask-image: radial-gradient(circle at top, black, transparent 72%);
+    opacity: 0.18;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  ::selection {
+    background: rgba(226, 58, 46, 0.4);
+    color: #ffffff;
+  }
+}
+
+@layer components {
+  .page-shell {
+    @apply mx-auto w-full max-w-[1360px] space-y-10 lg:space-y-14;
+  }
+
+  .page-shell-narrow {
+    @apply mx-auto w-full max-w-[760px] space-y-10 lg:space-y-14;
+  }
+
+  .page-stack {
+    @apply space-y-10 lg:space-y-14;
+  }
+
+  .surface-panel {
+    @apply rounded-[18px] border border-border;
+    background-color: rgba(16, 21, 27, 0.92);
+  }
+
+  .surface-panel-muted {
+    @apply rounded-[16px] border border-border;
+    background-color: rgba(21, 27, 35, 0.82);
+  }
+
+  .surface-feature {
+    @apply rounded-[24px] border border-borderStrong;
+    background-color: rgba(21, 27, 35, 0.96);
+  }
+
+  .eyebrow {
+    @apply text-[10px] font-semibold uppercase tracking-[0.24em] text-dim;
+  }
+
+  .page-title {
+    @apply font-display text-[2.5rem] leading-[0.94] tracking-[0.015em] text-text sm:text-[3.1rem] lg:text-[3.45rem];
+  }
+
+  .section-title {
+    @apply text-[1.45rem] font-semibold leading-tight text-text sm:text-[1.7rem];
+  }
+
+  .page-copy {
+    @apply max-w-[64ch] text-sm leading-7 text-muted sm:text-[1rem];
+  }
+
+  .ui-button {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[12px] border px-4 text-sm font-medium transition-colors;
+  }
+
+  .ui-button-primary {
+    @apply ui-button h-12 border-accent bg-accent px-5 text-white hover:bg-[#d06051];
+  }
+
+  .ui-button-secondary {
+    @apply ui-button h-12 border-borderStrong bg-surfaceAlt px-5 text-text hover:border-muted hover:bg-panel;
+  }
+
+  .ui-button-tertiary {
+    @apply ui-button h-10 border-border bg-transparent px-3.5 text-muted hover:border-borderStrong hover:bg-surfaceAlt hover:text-text;
+  }
+
+  .state-chip {
+    @apply inline-flex items-center gap-2 rounded-full border border-borderStrong bg-surfaceAlt px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted;
+  }
+
+  .data-pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted;
+  }
+
+  .mono-data {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-card {
+    @apply rounded-[14px] border border-border p-4;
+    background-color: rgba(21, 27, 35, 0.82);
+  }
+
+  .stat-label {
+    @apply text-[11px] uppercase tracking-[0.22em] text-dim;
+  }
+
+  .stat-value {
+    @apply mt-2 font-display text-[1.95rem] leading-none tracking-[0.01em] text-text sm:text-[2.15rem];
+  }
+
+  .insight-line {
+    @apply text-sm leading-6 text-muted;
+  }
+
+  .archive-row {
+    @apply grid gap-4 rounded-[16px] border border-border p-4 transition-colors hover:border-borderStrong hover:bg-surfaceAlt md:grid-cols-[110px_minmax(0,1fr)_180px];
+    background-color: rgba(17, 22, 28, 0.75);
+  }
+
+  .list-panel {
+    @apply overflow-hidden rounded-[18px] border border-border;
+    background-color: rgba(16, 21, 27, 0.92);
+  }
+
+  .list-row {
+    @apply grid gap-4 px-6 py-5;
+    border-top: 1px solid rgba(39, 49, 61, 0.9);
+  }
+
+  .list-row:first-child {
+    border-top: 0;
+  }
+
+  .definition-list {
+    @apply divide-y divide-border rounded-[16px] border border-border;
+    background-color: rgba(21, 27, 35, 0.72);
+  }
+
+  .definition-row {
+    @apply grid gap-2 px-5 py-4 text-sm md:grid-cols-[180px_minmax(0,1fr)];
+  }
+
+  .data-table {
+    @apply w-full border-separate border-spacing-0 text-sm;
+  }
+
+  .data-table thead th {
+    @apply border-b border-border bg-surface px-4 py-3 text-left text-[11px] uppercase tracking-[0.22em] text-dim;
+  }
+
+  .data-table tbody td {
+    @apply border-b border-border px-4 py-3 align-top;
+  }
+
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .subnav-link {
+    @apply inline-flex h-10 items-center rounded-[10px] border border-transparent px-3 text-sm text-muted transition-colors hover:border-border hover:bg-surfaceAlt hover:text-text;
+  }
+
+  .subnav-link-active {
+    @apply border-borderStrong bg-surfaceAlt text-text;
+  }
+
+  .summary-grid {
+    @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-4;
+  }
+
+  .utility-kicker {
+    @apply text-[11px] uppercase tracking-[0.18em] text-dim;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #10151b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #313d4d;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #415166;
+}
+
+.player-row {
+  position: relative;
+}
+
+.player-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--color-accent);
+}

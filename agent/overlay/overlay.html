@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Оверлей F1 League</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap');
+
+  :root {
+    --bg-0: rgba(7, 10, 13, 0.82);
+    --bg-1: rgba(16, 21, 28, 0.94);
+    --line: rgba(255,255,255,0.1);
+    --text: #f7f2e7;
+    --muted: rgba(247,242,231,0.66);
+    --accent: #ff5c39;
+    --accent-2: #ffba49;
+    --ok: #7be495;
+    --warn: #ffcf54;
+    --danger: #ff8b7a;
+    --cool: #7de1ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: transparent;
+    color: var(--text);
+    font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .overlay-stage {
+    position: fixed;
+    inset: 0;
+  }
+
+  .widget {
+    position: fixed;
+    left: calc(var(--x, 0) * 1%);
+    top: calc(var(--y, 0) * 1%);
+    pointer-events: auto;
+  }
+
+  .widget-shell {
+    position: relative;
+    overflow: hidden;
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.05), transparent 22%),
+      linear-gradient(180deg, var(--bg-1), var(--bg-0));
+    backdrop-filter: blur(18px);
+    box-shadow: 0 24px 40px rgba(0,0,0,0.24);
+  }
+
+  .widget-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at top right, rgba(255,92,57,0.12), transparent 30%),
+      linear-gradient(180deg, rgba(255,255,255,0.04), transparent 26%);
+  }
+
+  .timing-widget {
+    width: clamp(260px, calc(var(--w, 20) * 1vw), 420px);
+    max-height: clamp(280px, calc(var(--h, 50) * 1vh), 640px);
+  }
+
+  .session-widget {
+    width: clamp(320px, calc(var(--w, 28) * 1vw), 640px);
+  }
+
+  .delta-widget {
+    width: clamp(210px, calc(var(--w, 16) * 1vw), 320px);
+  }
+
+  .speed-widget {
+    width: clamp(220px, calc(var(--w, 15) * 1vw), 320px);
+  }
+
+  .pedals-widget {
+    width: clamp(150px, calc(var(--w, 11) * 1vw), 240px);
+  }
+
+  .tyres-widget {
+    width: clamp(220px, calc(var(--w, 18) * 1vw), 340px);
+  }
+
+  .ers-widget {
+    width: clamp(250px, calc(var(--w, 20) * 1vw), 360px);
+  }
+
+  .engineer-widget {
+    width: clamp(320px, calc(var(--w, 26) * 1vw), 520px);
+    z-index: 5;
+  }
+
+  .widget-head,
+  .stat-row,
+  .session-meta,
+  .engineer-quick {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .widget-head {
+    padding: 11px 14px;
+    font-family: "Rajdhani", sans-serif;
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+
+  .widget-head.accent {
+    background: linear-gradient(90deg, rgba(255,92,57,0.9), rgba(255,186,73,0.82));
+    color: #1a130d;
+  }
+
+  .timing-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    max-height: clamp(240px, calc(var(--h, 50) * 1vh), 560px);
+    overflow: hidden;
+  }
+
+  .timing-row {
+    display: grid;
+    grid-template-columns: 28px 4px 1fr auto auto;
+    gap: 9px;
+    align-items: center;
+    padding: 7px 8px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid transparent;
+  }
+
+  .timing-row.human {
+    background: linear-gradient(90deg, rgba(255,92,57,0.18), rgba(255,255,255,0.04));
+    border-color: rgba(255,92,57,0.18);
+  }
+
+  .timing-pos {
+    font-family: "Rajdhani", sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .timing-color {
+    width: 4px;
+    height: 24px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.35);
+  }
+
+  .timing-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .timing-name {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .timing-meta {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .timing-gap {
+    color: var(--muted);
+    font-size: 11px;
+    font-family: Consolas, "SFMono-Regular", monospace;
+  }
+
+  .timing-tyre {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Rajdhani", sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    color: #17120d;
+  }
+
+  .timing-tyre.tyre-s { background: #ff5e5e; }
+  .timing-tyre.tyre-m { background: #ffcf54; }
+  .timing-tyre.tyre-h { background: #edf1f5; color: #141b24; }
+  .timing-tyre.tyre-i { background: #74d87d; }
+  .timing-tyre.tyre-w { background: #73a9ff; }
+  .timing-tyre.tyre-u { background: rgba(255,255,255,0.16); color: var(--text); }
+
+  .session-shell,
+  .delta-shell,
+  .speed-shell,
+  .pedals-shell,
+  .tyres-shell,
+  .ers-shell,
+  .engineer-shell {
+    padding: 16px 18px;
+  }
+
+  .tiny-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-family: "Rajdhani", sans-serif;
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+
+  .session-track {
+    font-family: "Rajdhani", sans-serif;
+    font-size: clamp(30px, 2.2vw, 42px);
+    line-height: .92;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    margin-top: 14px;
+  }
+
+  .session-meta {
+    flex-wrap: wrap;
+    margin-top: 16px;
+    justify-content: flex-start;
+  }
+
+  .session-pill {
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.05);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  #delta-value,
+  #speed-value {
+    font-family: "Rajdhani", sans-serif;
+    line-height: .9;
+    text-transform: uppercase;
+  }
+
+  #delta-value {
+    margin-top: 14px;
+    font-size: clamp(44px, 4vw, 58px);
+  }
+
+  #delta-label {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .delta-positive { color: var(--danger); }
+  .delta-negative { color: var(--ok); }
+  .delta-neutral { color: rgba(247,242,231,0.78); }
+
+  .speed-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  #speed-value {
+    margin-top: 16px;
+    font-size: clamp(72px, 5vw, 96px);
+  }
+
+  .speed-reading {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+  }
+
+  #speed-unit {
+    padding-bottom: 16px;
+    font-family: "Rajdhani", sans-serif;
+    font-size: 15px;
+    letter-spacing: .18em;
+    color: var(--muted);
+  }
+
+  .drs-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.05);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .drs-pill.active {
+    background: rgba(255,92,57,0.18);
+    border-color: rgba(255,92,57,0.26);
+    color: #ffd1c7;
+  }
+
+  .speed-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .pedal-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    margin-top: 18px;
+  }
+
+  .pedal-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pedal-column span {
+    color: var(--muted);
+    font-family: "Rajdhani", sans-serif;
+    font-size: 11px;
+    letter-spacing: .14em;
+  }
+
+  .pedal-track {
+    width: 100%;
+    height: clamp(88px, calc(var(--h, 20) * 1vh), 140px);
+    display: flex;
+    align-items: flex-end;
+    padding: 4px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.06);
+  }
+
+  .pedal-fill {
+    width: 100%;
+    height: 0;
+    border-radius: 999px;
+    transition: height .05s linear;
+  }
+
+  .pedal-fill.throttle { background: linear-gradient(180deg, #8df6a8, #2ea74d); }
+  .pedal-fill.brake { background: linear-gradient(180deg, #ffb7a8, #d93b3b); }
+
+  .tyres-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .tyre-compound {
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  .tyre-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .tyre-cell {
+    padding: 12px 10px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+    text-align: center;
+  }
+
+  .tyre-cell span,
+  .tyre-cell small {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  .tyre-cell strong {
+    font-family: "Rajdhani", sans-serif;
+    font-size: 24px;
+  }
+
+  .tyre-cell.temp-cool strong { color: var(--cool); }
+  .tyre-cell.temp-warm strong { color: var(--ok); }
+  .tyre-cell.temp-hot strong { color: var(--danger); }
+
+  .stat-row {
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .stat-row strong {
+    color: var(--text);
+    font-family: "Rajdhani", sans-serif;
+    font-size: 20px;
+    letter-spacing: .04em;
+  }
+
+  .progress-track {
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.08);
+    margin-top: 8px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    transition: width .12s ease;
+  }
+
+  .progress-fill.ers {
+    background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  }
+
+  .progress-fill.fuel {
+    background: linear-gradient(90deg, #6fa8ff, #3d69d8);
+  }
+
+  .engineer-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0;
+    color: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .engineer-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+  }
+
+  .engineer-title strong {
+    font-family: "Rajdhani", sans-serif;
+    font-size: 24px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  .engineer-summary {
+    margin-top: 14px;
+    color: rgba(247,242,231,0.78);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .engineer-quick {
+    margin-top: 12px;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .quick-btn {
+    padding: 7px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.05);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .quick-btn:hover {
+    background: rgba(255,92,57,0.16);
+    border-color: rgba(255,92,57,0.22);
+    color: var(--text);
+  }
+
+  .engineer-body {
+    display: none;
+    margin-top: 14px;
+  }
+
+  .engineer-body.open { display: block; }
+
+  .engineer-messages {
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .engineer-message {
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .engineer-message.user {
+    background: rgba(255,92,57,0.14);
+    border-color: rgba(255,92,57,0.2);
+  }
+
+  .engineer-compose {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .engineer-compose input {
+    flex: 1;
+    min-width: 0;
+    padding: 11px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(7,10,13,0.7);
+    color: var(--text);
+    outline: none;
+    font: inherit;
+  }
+
+  .engineer-compose button {
+    padding: 11px 14px;
+    border-radius: 14px;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    color: #1a130d;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  }
+
+  .connection-status {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(8,10,13,0.76);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    backdrop-filter: blur(12px);
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="overlay-stage" id="overlay-stage">
+  <section id="timing-tower" class="widget timing-widget">
+    <div class="widget-shell">
+      <div class="widget-head accent">
+        <span>Пульт гонки</span>
+        <span id="tt-lap">КРУГ -/-</span>
+      </div>
+      <div class="timing-list" id="tt-body"></div>
+    </div>
+  </section>
+
+  <section id="session-info" class="widget session-widget">
+    <div class="widget-shell session-shell">
+      <span class="tiny-label">Трасса</span>
+      <div class="session-track" id="si-track">Ожидание сессии</div>
+      <div class="session-meta">
+        <span class="session-pill" id="si-lap">Круг -/-</span>
+        <span class="session-pill" id="si-weather">Погода --</span>
+        <span class="session-pill" id="si-air">Воздух --C</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="delta-box" class="widget delta-widget">
+    <div class="widget-shell delta-shell">
+      <span class="tiny-label">Дельта круга</span>
+      <div id="delta-value" class="delta-neutral">+0.000</div>
+      <div id="delta-label">от лучшего ориентира</div>
+    </div>
+  </section>
+
+  <section id="speed-box" class="widget speed-widget">
+    <div class="widget-shell speed-shell">
+      <div class="speed-top">
+        <span class="tiny-label">Болид 01</span>
+        <span class="drs-pill" id="speed-drs">DRS</span>
+      </div>
+      <div class="speed-reading">
+        <div id="speed-value">0</div>
+        <div id="speed-unit">KM/H</div>
+      </div>
+      <div class="speed-foot">
+        <span id="gear-value">Передача N</span>
+        <span id="speed-mode">Живая телеметрия</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="pedals-box" class="widget pedals-widget">
+    <div class="widget-shell pedals-shell">
+      <span class="tiny-label">Педали</span>
+      <div class="pedal-bars">
+        <div class="pedal-column">
+          <div class="pedal-track"><div class="pedal-fill throttle" id="throttle-bar"></div></div>
+          <span>ГАЗ</span>
+        </div>
+        <div class="pedal-column">
+          <div class="pedal-track"><div class="pedal-fill brake" id="brake-bar"></div></div>
+          <span>ТОРМ</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tyres-box" class="widget tyres-widget">
+    <div class="widget-shell tyres-shell">
+      <div class="tyres-head">
+        <span class="tiny-label">Окно шин</span>
+        <span class="tyre-compound" id="tyre-compound">Состав --</span>
+      </div>
+      <div class="tyre-grid">
+        <div class="tyre-cell" id="tyre-card-fl"><span>FL</span><strong id="tyre-fl">--%</strong><small id="tyre-fl-temp">--C</small></div>
+        <div class="tyre-cell" id="tyre-card-fr"><span>FR</span><strong id="tyre-fr">--%</strong><small id="tyre-fr-temp">--C</small></div>
+        <div class="tyre-cell" id="tyre-card-rl"><span>RL</span><strong id="tyre-rl">--%</strong><small id="tyre-rl-temp">--C</small></div>
+        <div class="tyre-cell" id="tyre-card-rr"><span>RR</span><strong id="tyre-rr">--%</strong><small id="tyre-rr-temp">--C</small></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ers-fuel-box" class="widget ers-widget">
+    <div class="widget-shell ers-shell">
+      <span class="tiny-label">Энергия</span>
+      <div class="stat-row"><span>Заряд ERS</span><strong id="ers-pct">0%</strong></div>
+      <div class="progress-track"><div class="progress-fill ers" id="ers-bar"></div></div>
+      <div class="stat-row"><span>Топливное окно</span><strong id="fuel-state">Стабильно</strong></div>
+      <div class="progress-track"><div class="progress-fill fuel" id="fuel-bar"></div></div>
+      <div class="stat-row" style="margin-top:10px"><span>Остаток</span><strong id="fuel-laps">-- кр.</strong></div>
+    </div>
+  </section>
+
+  <section id="engineer-box" class="widget engineer-widget">
+    <div class="widget-shell engineer-shell">
+      <button class="engineer-toggle" type="button" onclick="toggleEngineer()">
+        <div class="engineer-title">
+          <span class="tiny-label">ИИ-инженер</span>
+          <strong>Радиорубка</strong>
+        </div>
+        <span class="session-pill" id="eng-toggle">Закрыто</span>
+      </button>
+      <p class="engineer-summary" id="eng-summary">Спроси про шины, ERS, торможение, потерю темпа или стратегию гонки.</p>
+      <div class="engineer-quick">
+        <button class="quick-btn" type="button" onclick="sendEngineerQ('Нужен совет по шинам прямо сейчас')">Шины</button>
+        <button class="quick-btn" type="button" onclick="sendEngineerQ('Где я теряю время?')">Темп</button>
+        <button class="quick-btn" type="button" onclick="sendEngineerQ('Как использовать ERS на этом круге?')">ERS</button>
+      </div>
+      <div class="engineer-body" id="eng-body">
+        <div class="engineer-messages" id="eng-messages"></div>
+        <div class="engineer-compose">
+          <input id="eng-input" type="text" placeholder="Спроси гоночного инженера" onkeydown="if(event.key==='Enter'){sendEngineerQ();}">
+          <button type="button" onclick="sendEngineerQ()">Отправить</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="connection" class="connection-status">Подключение</div>
+
+<script>
+const WS_PORT = 8081;
+const WEATHER_LABELS = ["Ясно", "Лёгкая облачность", "Пасмурно", "Лёгкий дождь", "Сильный дождь", "Шторм"];
+const params = new URLSearchParams(location.search);
+const WIDGET_LAYOUTS = [
+  { key: "timing", id: "timing-tower", x: 2, y: 8, w: 20, h: 50 },
+  { key: "session", id: "session-info", x: 36, y: 6, w: 28, h: 12 },
+  { key: "delta", id: "delta-box", x: 34, y: 72, w: 16, h: 15 },
+  { key: "speed", id: "speed-box", x: 51, y: 69, w: 15, h: 19 },
+  { key: "pedals", id: "pedals-box", x: 67, y: 68, w: 11, h: 20 },
+  { key: "tyres", id: "tyres-box", x: 80, y: 10, w: 18, h: 25 },
+  { key: "ers", id: "ers-fuel-box", x: 78, y: 38, w: 20, h: 20 },
+  { key: "engineer", id: "engineer-box", x: 72, y: 67, w: 26, h: 24 },
+];
+
+const cfg = {
+  timing: params.get("timing") !== "0",
+  session: params.get("session") !== "0",
+  delta: params.get("delta") !== "0",
+  speed: params.get("speed") !== "0",
+  pedals: params.get("pedals") !== "0",
+  tyres: params.get("tyres") !== "0",
+  ers: params.get("ers") !== "0",
+  engineer: params.get("engineer") !== "0",
+  opacity: Math.max(0.2, Math.min(1, Number.parseFloat(params.get("opacity") || "0.85"))),
+};
+
+const state = {
+  totalLaps: null,
+  currentLap: null,
+  currentTyre: "--",
+  engineerOpen: false,
+};
+
+const ENGINEER_API = params.get("api") || "http://localhost:8000";
+let ws = null;
+
+function esc(value) {
+  const el = document.createElement("div");
+  el.textContent = value == null ? "" : String(value);
+  return el.innerHTML;
+}
+
+function safeNumber(value, fallback) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function parsePositions() {
+  const raw = params.get("positions");
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function applyConfig() {
+  document.getElementById("overlay-stage").style.opacity = String(cfg.opacity);
+  const positions = parsePositions();
+
+  WIDGET_LAYOUTS.forEach((widget, index) => {
+    const el = document.getElementById(widget.id);
+    if (!el) return;
+    const pos = positions[index] || {};
+    const x = Math.max(0, Math.min(100, safeNumber(pos.x, widget.x)));
+    const y = Math.max(0, Math.min(100, safeNumber(pos.y, widget.y)));
+    el.style.setProperty("--x", String(x));
+    el.style.setProperty("--y", String(y));
+    el.style.setProperty("--w", String(widget.w));
+    el.style.setProperty("--h", String(widget.h));
+    if (!cfg[widget.key]) {
+      el.classList.add("hidden");
+    }
+  });
+}
+
+function updateLapLabels() {
+  const current = state.currentLap || "-";
+  const total = state.totalLaps || "-";
+  const lapLabel = `КРУГ ${current}/${total}`;
+  document.getElementById("tt-lap").textContent = lapLabel;
+  document.getElementById("si-lap").textContent = lapLabel;
+}
+
+function tyreClass(tyre) {
+  switch ((tyre || "").toUpperCase()) {
+    case "S": return "tyre-s";
+    case "M": return "tyre-m";
+    case "H": return "tyre-h";
+    case "I": return "tyre-i";
+    case "W": return "tyre-w";
+    default: return "tyre-u";
+  }
+}
+
+function fuelWindowLabel(fuelLaps) {
+  if (!Number.isFinite(fuelLaps)) return "Стабильно";
+  if (fuelLaps < 2.5) return "Атака";
+  if (fuelLaps < 4.5) return "Плотно";
+  if (fuelLaps < 8) return "Стабильно";
+  return "Длинный стинт";
+}
+
+function formatDriverName(name) {
+  const value = (name || "").trim();
+  if (!value) return "Неизвестно";
+  const parts = value.split(/\s+/);
+  return (parts.length > 1 ? parts[parts.length - 1] : value).toUpperCase();
+}
+
+function renderTiming(entries) {
+  const body = document.getElementById("tt-body");
+  if (!Array.isArray(entries) || !entries.length) {
+    body.innerHTML = `
+      <div class="timing-row"><div class="timing-pos">1</div><div class="timing-color"></div><div class="timing-main"><div class="timing-name">Ожидание тайминга</div><div class="timing-meta">сервер оверлея в сети</div></div><div class="timing-gap">Лидер</div><div class="timing-tyre tyre-u">-</div></div>
+      <div class="timing-row human"><div class="timing-pos">2</div><div class="timing-color" style="background:#ff5c39"></div><div class="timing-main"><div class="timing-name">Запусти агент для трансляции телеметрии</div><div class="timing-meta">нужна активная сессия</div></div><div class="timing-gap">+0.000</div><div class="timing-tyre tyre-u">-</div></div>
+    `;
+    return;
+  }
+
+  const leader = entries[0];
+  state.currentLap = leader?.lap || state.currentLap;
+  updateLapLabels();
+
+  const human = entries.find(entry => entry.is_human);
+  if (human?.tyre) {
+    state.currentTyre = human.tyre.toUpperCase();
+    document.getElementById("tyre-compound").textContent = `Состав ${state.currentTyre}`;
+  }
+
+  body.innerHTML = entries.slice(0, 15).map(entry => {
+    const gap = entry.position === 1 ? "Лидер" : (entry.gap || "+--");
+    const meta = entry.pit_stops > 0 ? `Питы ${entry.pit_stops}` : "На трассе";
+    return `
+      <div class="timing-row ${entry.is_human ? "human" : ""}">
+        <div class="timing-pos">${esc(entry.position)}</div>
+        <div class="timing-color" style="background:${esc(entry.team_color || "#a0a7b4")}"></div>
+        <div class="timing-main">
+          <div class="timing-name">${esc(formatDriverName(entry.driver_name))}</div>
+          <div class="timing-meta">${esc(meta)}</div>
+        </div>
+        <div class="timing-gap">${esc(gap)}</div>
+        <div class="timing-tyre ${tyreClass(entry.tyre)}">${esc((entry.tyre || "-").toUpperCase())}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function setTyreWear(id, wear) {
+  if (!Number.isFinite(wear)) return;
+  const card = document.getElementById(`tyre-card-${id}`);
+  const valueNode = document.getElementById(`tyre-${id}`);
+  valueNode.textContent = `${Math.round(wear)}%`;
+  if (wear < 30) {
+    card.style.borderColor = "rgba(123,228,149,0.35)";
+  } else if (wear < 60) {
+    card.style.borderColor = "rgba(255,207,84,0.35)";
+  } else {
+    card.style.borderColor = "rgba(255,139,122,0.35)";
+  }
+}
+
+function setTyreTemp(id, temp) {
+  if (!Number.isFinite(temp)) return;
+  const card = document.getElementById(`tyre-card-${id}`);
+  const tempNode = document.getElementById(`tyre-${id}-temp`);
+  tempNode.textContent = `${Math.round(temp)}C`;
+  card.classList.remove("temp-cool", "temp-warm", "temp-hot");
+  if (temp < 90) {
+    card.classList.add("temp-cool");
+  } else if (temp < 100) {
+    card.classList.add("temp-warm");
+  } else {
+    card.classList.add("temp-hot");
+  }
+}
+
+function renderCar(msg) {
+  if (msg.speed !== undefined) {
+    document.getElementById("speed-value").textContent = Math.round(msg.speed);
+  }
+
+  if (msg.gear !== undefined) {
+    const gear = msg.gear <= 0 ? (msg.gear === -1 ? "R" : "N") : msg.gear;
+    document.getElementById("gear-value").textContent = `Передача ${gear}`;
+  }
+
+  if (msg.drs !== undefined) {
+    const drsNode = document.getElementById("speed-drs");
+    drsNode.classList.toggle("active", Boolean(msg.drs));
+  }
+
+  if (msg.throttle !== undefined) {
+    document.getElementById("throttle-bar").style.height = `${Math.max(0, Math.min(100, msg.throttle * 100))}%`;
+  }
+
+  if (msg.brake !== undefined) {
+    document.getElementById("brake-bar").style.height = `${Math.max(0, Math.min(100, msg.brake * 100))}%`;
+  }
+
+  if (Array.isArray(msg.tyre_wear)) {
+    setTyreWear("fl", safeNumber(msg.tyre_wear[2], 0));
+    setTyreWear("fr", safeNumber(msg.tyre_wear[3], 0));
+    setTyreWear("rl", safeNumber(msg.tyre_wear[0], 0));
+    setTyreWear("rr", safeNumber(msg.tyre_wear[1], 0));
+  }
+
+  if (Array.isArray(msg.tyre_temps)) {
+    setTyreTemp("fl", safeNumber(msg.tyre_temps[2], 0));
+    setTyreTemp("fr", safeNumber(msg.tyre_temps[3], 0));
+    setTyreTemp("rl", safeNumber(msg.tyre_temps[0], 0));
+    setTyreTemp("rr", safeNumber(msg.tyre_temps[1], 0));
+  }
+
+  if (msg.ers_pct !== undefined) {
+    const ersPct = Math.round(safeNumber(msg.ers_pct, 0) * 100);
+    document.getElementById("ers-pct").textContent = `${ersPct}%`;
+    document.getElementById("ers-bar").style.width = `${Math.max(0, Math.min(100, ersPct))}%`;
+  }
+
+  if (msg.fuel_laps !== undefined) {
+    const fuelLaps = safeNumber(msg.fuel_laps, 0);
+    document.getElementById("fuel-laps").textContent = `${fuelLaps.toFixed(1)} кр.`;
+    document.getElementById("fuel-state").textContent = fuelWindowLabel(fuelLaps);
+    document.getElementById("fuel-bar").style.width = `${Math.max(0, Math.min(100, fuelLaps * 8))}%`;
+  }
+}
+
+function renderSession(msg) {
+  if (msg.track_name) {
+    document.getElementById("si-track").textContent = msg.track_name;
+  }
+
+  if (msg.total_laps !== undefined && msg.total_laps !== null) {
+    state.totalLaps = msg.total_laps;
+    updateLapLabels();
+  }
+
+  if (msg.weather !== undefined && msg.weather !== null) {
+    document.getElementById("si-weather").textContent = `Погода ${WEATHER_LABELS[msg.weather] || "--"}`;
+  }
+
+  if (msg.air_temp !== undefined && msg.air_temp !== null) {
+    document.getElementById("si-air").textContent = `Воздух ${msg.air_temp}C`;
+  }
+}
+
+function renderDelta(msg) {
+  const node = document.getElementById("delta-value");
+  const label = document.getElementById("delta-label");
+  const deltaMs = safeNumber(msg.delta_ms, null);
+
+  if (deltaMs === null) {
+    node.textContent = "+0.000";
+    node.className = "delta-neutral";
+    label.textContent = "от лучшего ориентира";
+    return;
+  }
+
+  const sign = deltaMs >= 0 ? "+" : "";
+  node.textContent = `${sign}${(deltaMs / 1000).toFixed(3)}`;
+    if (deltaMs > 50) {
+      node.className = "delta-positive";
+      label.textContent = "проигрыш лучшему";
+    } else if (deltaMs < -50) {
+      node.className = "delta-negative";
+      label.textContent = "быстрее ориентира";
+    } else {
+      node.className = "delta-neutral";
+      label.textContent = "по плану";
+    }
+}
+
+function setConnection(text, online) {
+  const node = document.getElementById("connection");
+  node.textContent = text;
+  node.style.color = online ? "#93f2af" : "rgba(247,242,231,0.66)";
+}
+
+function connect() {
+  ws = new WebSocket(`ws://localhost:${WS_PORT}`);
+
+  ws.onopen = () => setConnection("Телеметрия подключена", true);
+  ws.onclose = () => {
+    setConnection("Переподключение", false);
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = event => {
+    const msg = JSON.parse(event.data);
+    switch (msg.type) {
+      case "timing":
+        renderTiming(msg.entries);
+        break;
+      case "car":
+        renderCar(msg);
+        break;
+      case "session":
+        renderSession(msg);
+        break;
+      case "delta":
+        renderDelta(msg);
+        break;
+      default:
+        break;
+    }
+  };
+}
+
+function toggleEngineer(forceState) {
+  state.engineerOpen = typeof forceState === "boolean" ? forceState : !state.engineerOpen;
+  document.getElementById("eng-body").classList.toggle("open", state.engineerOpen);
+  document.getElementById("eng-toggle").textContent = state.engineerOpen ? "Открыто" : "Закрыто";
+}
+
+function pushEngineerMessage(role, text, isError) {
+  const log = document.getElementById("eng-messages");
+  const node = document.createElement("div");
+  node.className = `engineer-message ${role === "user" ? "user" : ""}`;
+  if (isError) node.style.color = "#ffb7a8";
+  node.textContent = text;
+  log.appendChild(node);
+  log.scrollTop = log.scrollHeight;
+  return node;
+}
+
+function updateEngineerSummary(text) {
+  const summary = document.getElementById("eng-summary");
+  summary.textContent = text.length > 160 ? `${text.slice(0, 157)}...` : text;
+}
+
+async function sendEngineerQ(quickQ) {
+  const input = document.getElementById("eng-input");
+  const question = (quickQ || input.value || "").trim();
+  if (!question) return;
+  if (!quickQ) input.value = "";
+
+  pushEngineerMessage("user", question, false);
+  const loading = pushEngineerMessage("assistant", "Думаю...", false);
+  toggleEngineer(true);
+
+  try {
+    const response = await fetch(`${ENGINEER_API}/api/engineer/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, system_prompt: "" }),
+    });
+    const data = await response.json();
+    const answer = data.answer || "Ответ не получен.";
+    loading.textContent = answer;
+    updateEngineerSummary(answer);
+  } catch (error) {
+    loading.textContent = "Не удалось подключиться к API инженера.";
+    loading.style.color = "#ffb7a8";
+  }
+}
+
+function seedOverlay() {
+  renderTiming([]);
+  renderSession({ track_name: "Ожидание сессии", weather: null, air_temp: null, total_laps: null });
+  renderDelta({ delta_ms: null });
+  updateLapLabels();
+}
+
+applyConfig();
+seedOverlay();
+connect();
+</script>
+</body>
+</html>
