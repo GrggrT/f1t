@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean, Column, Float, ForeignKey, Index, Integer,
-    String, Text, BigInteger, SmallInteger, TIMESTAMP, UniqueConstraint
+    String, Text, BigInteger, SmallInteger, TIMESTAMP, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import relationship
@@ -34,7 +34,11 @@ class Player(Base):
 
 
 class WebUser(Base):
-    """Аккаунт на сайте (Google / Steam / email+password)."""
+    """Аккаунт на сайте (Google / Steam / email+password).
+
+    DEPRECATED: merged into `User` (Sprint 2). This class is kept until PR 2.5
+    drops the table; reads should migrate to `User` in PR 2.2.
+    """
     __tablename__ = "web_users"
 
     id               = Column(Integer, primary_key=True)
@@ -49,6 +53,41 @@ class WebUser(Base):
     created_at       = Column(TIMESTAMP(timezone=True), default=_utcnow)
 
     player           = relationship("Player")
+
+
+class User(Base):
+    """Unified identity (Sprint 2). One row = one person.
+
+    Populated by migration 0013 from `web_users` + `players` and kept in sync
+    by the dual-write trigger from 0014. After PR 2.5 this becomes the single
+    source of truth; `web_users` and `players` go away.
+
+    Field conflict resolution (per Sprint 2 spec):
+      name        = COALESCE(player.name, web_user.name)
+      avatar_url  = COALESCE(player.avatar_url, web_user.picture)
+      steam_id64  = COALESCE(player.steam_id64, web_user.steam_id64)
+    steam_names / steam_url / telegram_id come from `players` only;
+    email / hashed_password / google_id / is_system_admin from `web_users` only.
+
+    `legacy_*_id` tracking columns let us roll back during the migration
+    window. They will be dropped in PR 2.5 (or a later cosmetic PR).
+    """
+    __tablename__ = "users"
+
+    id                  = Column(Integer, primary_key=True)
+    email               = Column(String(255), unique=True, nullable=True)
+    hashed_password     = Column(Text, nullable=True)
+    google_id           = Column(String(100), unique=True, nullable=True)
+    name                = Column(String(100), nullable=False)
+    avatar_url          = Column(Text, nullable=True)
+    telegram_id         = Column(BigInteger, unique=True, nullable=True)
+    steam_id64          = Column(String(20), unique=True, nullable=True)
+    steam_names         = Column(ARRAY(Text), nullable=True)
+    steam_url           = Column(Text, nullable=True)
+    is_system_admin     = Column(Boolean, default=False, nullable=False, server_default="false")
+    created_at          = Column(TIMESTAMP(timezone=True), default=_utcnow, server_default=text("now()"))
+    legacy_web_user_id  = Column(Integer, unique=True, nullable=True)
+    legacy_player_id    = Column(Integer, unique=True, nullable=True)
 
 
 class Lobby(Base):

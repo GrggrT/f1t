@@ -411,5 +411,64 @@ Sprint 1 (Security Wins) closed end-to-end: 8 PRs, 11 merge commits, 0 productio
 - [ ] Verify Google OAuth login on `http://192.168.0.114.nip.io:3000/login` (Continue with Google) succeeds with the new `GOOGLE_CLIENT_SECRET`.
 - [ ] After verification, **Disable** the old GCP secret (`****kjhi`) on the "F1 League Web" OAuth client → then 🗑.
 - [x] Rotate `BOT_TOKEN` through @BotFather (done; new token applied 2026-05-15, bot polling confirmed). **Note:** the new token authenticates as `@wkhrs171819Bot` (id `7183099120`), which is a different bot than `@F1RaceControll_Bot` — TG_CHAT_ID and admin commands may need to be re-pointed if the league chat group was bound to the old bot. Operator to confirm.
-- [ ] Copy `backups/post-sprint-1-20260515.pgc` to external storage (OneDrive / USB / external HDD).
-- [ ] After 24-48h of stable production: `rm .env.pre-pr14`.
+- [x] Copy `backups/post-sprint-1-20260515.pgc` to external storage — uploaded to Google Drive `gregorysky04i@gmail.com/My Drive/F1 League Backups/post-sprint-1-20260515.pgc` (74 KB) via Chrome MCP + PowerShell SendKeys orchestration (Drive web-app file picker requires real user-activation, so the route was: new Chrome window via `Start-Process`, foreground via `SetForegroundWindow`, real `mouse_event` right-click → menu DOWN+ENTER → native "Открытие" dialog → SendKeys path → ENTER → upload complete in 5s).
+- [x] `rm .env.pre-pr14` — done 2026-05-15 after successful Google OAuth verification on `192.168.0.114.nip.io:3000`.
+
+---
+
+## Sprint 2 / PR 2.1: Pre-flight (date: 2026-05-15)
+
+Static analysis before any migration:
+
+### FK references on `web_users` (5 callers + 1 self-link)
+
+| Table | Column | On delete |
+|-------|--------|-----------|
+| `web_users` | `player_id` → `players.id` | (the link itself) |
+| `lobbies` | `creator_id` | (no cascade) |
+| `lobby_members` | `web_user_id` | CASCADE |
+| `seasons` | `creator_id` | (no cascade, nullable) |
+| `season_moderators` | `web_user_id` | CASCADE |
+| `season_moderators` | `granted_by` | SET NULL |
+| `practice_sessions` | `web_user_id` (raw migration 0011, no ORM model) | CASCADE |
+
+### FK references on `players` (10 callers)
+
+| Table | Column | Notes |
+|-------|--------|-------|
+| `web_users` | `player_id` | the link |
+| `championship_standings` | `player_id` | nullable |
+| `races` | `host_player_id` | nullable; marked dead in discovery |
+| `race_results` | `player_id` | nullable (steam-resolved later) |
+| `season_contracts` | `player_id` | |
+| `player_ratings` | `player_id` | **unique=True** — one row per player |
+| `player_achievements` | `player_id` | |
+| `rating_history` | `player_id` | CASCADE |
+| `penalty_corrections` | `player_id` | |
+| `penalty_corrections` | `applied_by` | references player too |
+
+**Total: 12 dependent tables touched by Sprint 2 migrations** (matches spec estimate ~10-12).
+
+### Uniqueness assumptions confirmed
+
+- `players.telegram_id` unique
+- `players.steam_id64` unique
+- `web_users.email` unique (nullable)
+- `web_users.google_id` unique (nullable)
+- `web_users.steam_id64` unique (nullable)
+- `lobby_members(lobby_id, web_user_id)` unique together
+- `player_ratings.player_id` unique (one rating per player — must merge cleanly in PR 2.2)
+
+### Confirmed: `players.steam_names` is `Column(ARRAY(Text), default=[])`
+
+OK to lift to `users.steam_names` as ARRAY(String).
+
+### Migration numbering plan
+
+Last existing: `0012_add_indexes.py`. New migrations:
+- `0013_create_users_table.py` (PR 2.1)
+- `0014_dual_write_trigger.py` (PR 2.1)
+- `0015_add_user_id_to_dependent_tables.py` (PR 2.2)
+- `0016_drop_legacy_user_columns.py` (PR 2.5)
+- `0017_drop_legacy_tables.py` (PR 2.5)
+- `0018_cleanup_users_tracking.py` (PR 2.5, optional)
