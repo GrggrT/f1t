@@ -352,3 +352,64 @@ External rotations (vendor consoles):
 3. **`GOOGLE_CLIENT_SECRET`** — **rotated** via Chrome MCP. On [console.cloud.google.com](https://console.cloud.google.com) → F1 League → APIs & Services → Credentials → "F1 League Web" client, added a second client secret (`****wQ14`) without disrupting the existing one. Downloaded the JSON, extracted the new secret, wrote to `.env` (verified `GOCSPX-` prefix, len 35), force-recreated frontend (container env confirmed `GOCSPX-` prefix). Live Google-login OAuth flow couldn't be exercised in MCP (the only authorized JS origin is `http://192.168.0.114.nip.io:3000`, which Chrome's private-network-access policy blocks for the extension). The old secret (`****kjhi`) is left **Enabled** on GCP as a grace-period fallback — operator should hit **Disable** once a real Google login on `192.168.0.114.nip.io:3000` succeeds with the new secret.
 
 Recovery: `.env.pre-pr14` (kept in repo root, gitignored) still contains the previous values of the four self-managed secrets — useful for emergency rollback in the next ~24h. Delete after the operator is confident the rotation is durable (`rm .env.pre-pr14`).
+
+---
+
+## Sprint 1: Closed (date: 2026-05-15)
+
+Sprint 1 (Security Wins) closed end-to-end: 8 PRs, 11 merge commits, 0 production incidents, 0 downtime. Every authenticated endpoint requires a Bearer token, every agent endpoint fails closed without `AGENT_SECRET_TOKEN`, every secret in the original CLAUDE.md leak is rotated, and the Google sign-in path is now signature-verified.
+
+### Commits (in merge order)
+
+| SHA | Title |
+|-----|-------|
+| `c027cdf` | Initial import: baseline ← tag `pre-refactor-baseline` |
+| `72e6278` | PR 0.3: baseline backup, git tag, GitHub remote |
+| `b7517c2` | PR 0.6.1: Test collection triage |
+| `ef16044` | PR 0.6.2: Test run triage |
+| `b6e11dc` | PR 0.6.3: Apply test triage — 48 passed, 0 errors |
+| `a1e7224` | PR 1.0: Frontend Bearer audit + universal apiFetch |
+| `79e7abc` | PR 1.0.5: Agent 401 handling — graceful auth failure surfacing |
+| `efc4d56` | PR 1.0.5 follow-up: launcher UI banner for auth_rejected |
+| `d13ea56` | PR 1.1: Backend require auth on open endpoints |
+| `a8f8a22` | PR 1.2: AGENT_SECRET_TOKEN fail-closed |
+| `718a658` | PR 1.2.5: /season/[id]/manage stub |
+| `2dc8ed8` | PR 1.3: Next.js bump, bot port hidden, bot secret compare_digest |
+| `eb15fd5` | PR 1.4: rotate self-managed secrets |
+| `86183ab` | PR 1.4 (cont): rotate GROQ_API_KEY and GOOGLE_CLIENT_SECRET |
+| `3bbef0e` | PR 1.5: Google id_token verification on /api/web/google |
+
+### Metrics
+
+- Tests: 50 → **61** (+11 total: +3 PR 1.1, +3 PR 1.2, +5 PR 1.5, +2 minor)
+- Endpoints closed behind auth: **16**
+- Self-managed secrets rotated: **5** (POSTGRES_PASSWORD, AGENT_SECRET_TOKEN, BOT_NOTIFY_SECRET, NEXTAUTH_SECRET, BOT_TOKEN)
+- Vendor secrets rotated: **2** (GROQ_API_KEY, GOOGLE_CLIENT_SECRET)
+- Production incidents: **0**
+- Downtime: **0**
+
+### Key engineering decisions made along the way (not in original roadmap)
+
+- **`google_client_id` read at-request-time, not at-import** — supports env override in tests AND future GCP rotations without a process restart. Same pattern applied retroactively to `config.get_agent_secret_token()` in PR 1.0.5.
+- **`+requests>=2.31`** added to `backend/requirements.txt` automatically — `google.auth.transport.requests` needs the `requests` HTTP library; google-auth alone doesn't pull it.
+- **Backwards-compatible Google user lookup** — by `sub` first, then by `email` after Google has verified it. Previously-created `google_id` rows keep working through the schema change.
+- **`auth_rejected` UI banner** — added as a follow-up commit (`efc4d56`) to PR 1.0.5 instead of bundled into the main commit, so the Python state-machine work is reviewable separately from the JS surface.
+- **system_admin bypass on lobby/season role gates** (`backend/services/auth_helpers.py`) — single-operator deployment + tests need a way to skip lobby/membership setup; documented inline.
+- **`make_system_admin_token` test helper** — new method on `BackendIntegrationCase` that registers a user, promotes via direct DB write, returns a Bearer token. Lets contracts/engineer/lobby tests skip seeding a full lobby tree just to satisfy a role check.
+- **`frontend/.dockerignore`** — without this, host-side `.next` and `node_modules` got copied into the build context and broke `next build` with a stale-cache `missing field hashSalt` error.
+- **`python` vs `python3` on Windows** — `python3` resolves to a Microsoft Store stub (silent no-op). All scripts must use `python` and ideally a real script file rather than a shell heredoc — this caused the `ALTER USER ... PASSWORD ''` incident in PR 1.4 (recovered via local-socket trust auth).
+
+### Backup checkpoint
+
+- File: `backups/post-sprint-1-20260515.pgc` (74 KB, PostgreSQL custom format v1.15)
+- Pre-rotation snapshot: `backups/pre-pr14-rotation-20260514-222141.pgc` (75 KB, kept until rotation is durable)
+- Baseline: `backups/pre-refactor-baseline-20260514.pgc` + git tag `pre-refactor-baseline`
+- New tag: **`post-sprint-1`** at HEAD
+
+### Pending manual tasks before Sprint 2
+
+- [ ] Verify Google OAuth login on `http://192.168.0.114.nip.io:3000/login` (Continue with Google) succeeds with the new `GOOGLE_CLIENT_SECRET`.
+- [ ] After verification, **Disable** the old GCP secret (`****kjhi`) on the "F1 League Web" OAuth client → then 🗑.
+- [x] Rotate `BOT_TOKEN` through @BotFather (done; new token applied 2026-05-15, bot polling confirmed). **Note:** the new token authenticates as `@wkhrs171819Bot` (id `7183099120`), which is a different bot than `@F1RaceControll_Bot` — TG_CHAT_ID and admin commands may need to be re-pointed if the league chat group was bound to the old bot. Operator to confirm.
+- [ ] Copy `backups/post-sprint-1-20260515.pgc` to external storage (OneDrive / USB / external HDD).
+- [ ] After 24-48h of stable production: `rm .env.pre-pr14`.
