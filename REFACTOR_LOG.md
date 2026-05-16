@@ -528,3 +528,34 @@ columns; a future cosmetic migration will drop them.
   fallback in `_resolve_user_from_token`. Launcher JWTs minted with `user.id`
   also work. Old launcher builds that POST `web_user_id` in the debrief
   endpoint body keep working — that field is accepted as an alias.
+
+---
+
+## Sprint 2: Closed (date: 2026-05-16)
+
+### Commits
+- 594e167 PR 2.1: create users table, dual-write triggers
+- 3099a0a PR 2.2: backend reads switch, user_id columns
+- 8865520 PR 2.3: bot switch to /api/users/by_telegram
+- f72df19 PR 2.4: frontend types unification
+- 8021375 PR 2.5: drop legacy tables + full refactor
+
+### Metrics
+- Tests: 61 passed / 5 skipped (historic PR 2.1 schema regression tests)
+- Tables dropped: web_users, players, season_moderators
+- Triggers dropped: 16 (14 per-table sync from 0015 + 2 dual-write from 0014)
+- Data loss: 0
+- Production incidents: 0
+- Downtime: 0
+
+### Pending cleanup (after Sprint 5)
+- [ ] Migration 0018: drop `users.legacy_web_user_id` and `users.legacy_player_id`
+  - Kept for diagnostic value + JWT back-compat during Sprint 3-5
+  - Safe to drop after ~2 weeks of stable production AND after all pre-PR2.5
+    JWTs have expired (max 30 days)
+
+### Backup checkpoint
+- File: `backups/post-sprint-2-20260516.pgc` (70 KB, PostgreSQL custom format v1.15, 194 TOC entries)
+- Git tag: `post-sprint-2` → commit `8021375` (pushed to origin)
+- Pre-Sprint-2-PR2.5 snapshot: `backups/pre-sprint-2-final-20260516-152417.pgc` (115 KB)
+- External copy: ⚠️ TO BE DONE MANUALLY BY OWNER (Google Drive / OneDrive / USB)
