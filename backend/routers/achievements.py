@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.db.base import get_db
 from backend.models.models import (
-    PlayerAchievement, Achievement, Player, RaceResult, Race
+    PlayerAchievement, Achievement, User, RaceResult, Race
 )
 
 router = APIRouter(prefix="/api", tags=["achievements"])
@@ -22,10 +22,10 @@ async def get_achievements(season_id: int, db: AsyncSession = Depends(get_db)):
             Achievement.name.label("ach_name"),
             Achievement.icon.label("ach_icon"),
             Achievement.description.label("ach_desc"),
-            Player.name.label("player_name"),
+            User.name.label("player_name"),
         )
         .join(Achievement, Achievement.id == PlayerAchievement.achievement_id)
-        .join(Player, Player.id == PlayerAchievement.player_id)
+        .join(User, User.id == PlayerAchievement.user_id)
         .join(Race, Race.id == PlayerAchievement.race_id, isouter=True)
         .where(Race.season_id == season_id)
         .order_by(PlayerAchievement.unlocked_at.desc())
@@ -54,11 +54,10 @@ async def get_track_records(season_id: int, db: AsyncSession = Depends(get_db)):
     if not races:
         return []
 
-    # Лучший FL для каждого track_id
     records: dict[int, dict] = {}
     fl_res = await db.execute(
-        select(RaceResult, Player.name.label("player_name"))
-        .join(Player, Player.id == RaceResult.player_id, isouter=True)
+        select(RaceResult, User.name.label("player_name"))
+        .join(User, User.id == RaceResult.user_id, isouter=True)
         .where(
             RaceResult.race_id.in_(list(races.keys())),
             RaceResult.has_fastest_lap == True,  # noqa: E712

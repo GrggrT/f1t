@@ -11,13 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.base import get_db
-from backend.models.models import Lobby, LobbyMember, Season, User, WebUser
+from backend.models.models import Lobby, LobbyMember, Season, User
 from backend.services.auth_dependencies import get_current_user
 
 
 async def require_system_admin_dep(
     user: User = Depends(get_current_user),
-) -> WebUser:
+) -> User:
     """Authenticated AND `is_system_admin`. 401 if no token, 403 if not admin."""
     if not user.is_system_admin:
         raise HTTPException(403, "System admin access required")
@@ -38,7 +38,7 @@ async def require_lobby_member(
     member = await db.scalar(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == user.web_user_id,
+            LobbyMember.user_id == user.id,
         )
     )
     if not member:

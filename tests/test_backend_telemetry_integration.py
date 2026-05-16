@@ -13,21 +13,39 @@ def _steam_id64() -> str:
 
 class BackendTelemetryIntegrationTests(BackendIntegrationCase):
     def _insert_player(self, name: str, steam_name: str, *, telegram_id: int | None = None) -> int:
+        """After Sprint 2 / PR 2.5 a 'player' is just a User row with steam_names set."""
         async def create_player(session):
-            from backend.models.models import Player
+            from backend.models.models import User
 
-            player = Player(
+            user = User(
                 name=name,
                 steam_id64=_steam_id64(),
                 steam_names=[steam_name],
                 telegram_id=telegram_id,
             )
-            session.add(player)
+            session.add(user)
             await session.commit()
-            await session.refresh(player)
-            return player.id
+            await session.refresh(user)
+            return user.id
 
         return self.harness.db_call(create_player)
+
+    def _attach_steam_identity(self, web_user_id: int, steam_name: str) -> None:
+        """Give an already-registered web user a steam_id64 + steam_names so
+        that races submitted with `steam_name` map back to them. Replaces the
+        old `/api/web/link-player` flow that joined a separate Player row to
+        the WebUser — that two-table relationship is gone."""
+        async def update(session):
+            from sqlalchemy import select
+            from backend.models.models import User
+
+            row = (await session.execute(select(User).where(User.id == web_user_id))).scalars().first()
+            assert row is not None, f"User id={web_user_id} missing"
+            row.steam_id64 = _steam_id64()
+            row.steam_names = [steam_name]
+            await session.commit()
+
+        self.harness.db_call(update)
 
     def _create_lobby_and_season(self, token: str) -> tuple[int, int]:
         lobby_response = self.client.post(
@@ -63,19 +81,12 @@ class BackendTelemetryIntegrationTests(BackendIntegrationCase):
         owner = self.register_user("telemetry-owner")
         hero_name = f"Telemetry Hero {uuid.uuid4().hex[:4]}"
         rival_name = f"Telemetry Rival {uuid.uuid4().hex[:4]}"
-        hero_player_id = self._insert_player(
-            "Hero Player",
-            hero_name,
-            telegram_id=100000 + int(uuid.uuid4().hex[:6], 16),
-        )
+        # Owner *is* the hero pilot now — no separate Player row to link.
+        self._attach_steam_identity(owner["id"], hero_name)
+        # Rival is a different person with no website account, just a User
+        # row with steam_names so the agent's race upload resolves it.
         self._insert_player("Rival Player", rival_name)
-
-        link_response = self.client.post(
-            "/api/web/link-player",
-            json={"player_id": hero_player_id},
-            headers=self.auth_headers(owner["token"]),
-        )
-        self.assertEqual(link_response.status_code, 200, link_response.text)
+        hero_player_id = owner["id"]
 
         _, season_id = self._create_lobby_and_season(owner["token"])
 

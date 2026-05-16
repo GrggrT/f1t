@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.db.base import get_database_url
-from backend.models.models import Player, Race, RaceResult
+from backend.models.models import User, Race, RaceResult
 
 
 def _groq_api_key() -> str:
@@ -124,7 +124,7 @@ async def run_debriefs_after_race(race_id: int, season_id: int) -> None:
 
     engine = create_async_engine(get_database_url(), echo=False)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    payloads: list[tuple[Player, AICoachPayload]] = []
+    payloads: list[tuple[User, AICoachPayload]] = []
     race: Race | None = None
 
     try:
@@ -136,12 +136,12 @@ async def run_debriefs_after_race(race_id: int, season_id: int) -> None:
 
             results_result = await db.execute(select(RaceResult).where(RaceResult.race_id == race_id))
             all_results = results_result.scalars().all()
-            human_results = [item for item in all_results if item.is_human and item.player_id]
+            human_results = [item for item in all_results if item.is_human and item.user_id]
             if not human_results:
                 return
 
             for result in human_results:
-                player = await db.get(Player, result.player_id)
+                player = await db.get(User, result.user_id)
                 if not player:
                     continue
                 payload = await _build_payload(db, player, result, race, all_results, season_id)
@@ -161,7 +161,7 @@ async def run_debriefs_after_race(race_id: int, season_id: int) -> None:
 
 async def _build_payload(
     db: AsyncSession,
-    player: Player,
+    player: User,
     result: RaceResult,
     race: Race,
     all_results: list[RaceResult],
@@ -198,7 +198,7 @@ async def _build_payload(
 
     season_result = await db.execute(
         select(RaceResult).where(
-            RaceResult.player_id == player.id,
+            RaceResult.user_id == player.id,
             RaceResult.season_id == season_id,
         )
     )
@@ -239,7 +239,7 @@ async def _call_groq(payload: AICoachPayload) -> str:
         return response.json()["choices"][0]["message"]["content"].strip()
 
 
-async def _send_debrief(player: Player, debrief: str, race: Race | None) -> None:
+async def _send_debrief(player: User, debrief: str, race: Race | None) -> None:
     if not player.telegram_id or not race:
         return
 

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from backend.db.base import get_db
-from backend.models.models import Player, Season, Race, RaceResult, SeasonContract, ChampionshipStanding
+from backend.models.models import User, Season, Race, RaceResult, SeasonContract, ChampionshipStanding
 from shared.f1_mappings import get_track_name, get_team_color
 
 router = APIRouter(prefix="/api", tags=["players"])
@@ -14,13 +14,13 @@ router = APIRouter(prefix="/api", tags=["players"])
 
 @router.get("/player/{player_id}/stats")
 async def get_player_stats(player_id: int, db: AsyncSession = Depends(get_db)):
-    player_res = await db.execute(select(Player).where(Player.id == player_id))
+    player_res = await db.execute(select(User).where(User.id == player_id))
     player = player_res.scalars().first()
     if not player:
         raise HTTPException(404, "Player not found")
 
     results_res = await db.execute(
-        select(RaceResult).where(RaceResult.player_id == player_id)
+        select(RaceResult).where(RaceResult.user_id == player_id)
     )
     results = results_res.scalars().all()
 
@@ -75,7 +75,7 @@ async def get_player_season_history(player_id: int, db: AsyncSession = Depends(g
     res = await db.execute(
         select(ChampionshipStanding, Season.name.label("season_name"), Season.status.label("season_status"))
         .join(Season, ChampionshipStanding.season_id == Season.id)
-        .where(ChampionshipStanding.player_id == player_id)
+        .where(ChampionshipStanding.user_id == player_id)
         .order_by(Season.id)
     )
     rows = res.all()

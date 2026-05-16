@@ -139,7 +139,7 @@ async def recalc_ratings_after_race(race_id: int) -> None:
                 select(RaceResult).where(
                     RaceResult.race_id == race_id,
                     RaceResult.is_human == True,  # noqa: E712
-                    RaceResult.player_id != None,  # noqa: E711
+                    RaceResult.user_id != None,  # noqa: E711
                     RaceResult.position != None,   # noqa: E711
                 )
             )
@@ -149,18 +149,18 @@ async def recalc_ratings_after_race(race_id: int) -> None:
                 return
 
             # Load or create ratings for each player
-            player_ids = [r.player_id for r in human_results]
+            user_ids = [r.user_id for r in human_results]
             ratings_res = await db.execute(
-                select(PlayerRating).where(PlayerRating.player_id.in_(player_ids))
+                select(PlayerRating).where(PlayerRating.user_id.in_(user_ids))
             )
             ratings_map: dict[int, PlayerRating] = {
-                pr.player_id: pr for pr in ratings_res.scalars().all()
+                pr.user_id: pr for pr in ratings_res.scalars().all()
             }
 
             # Create missing ratings
-            for pid in player_ids:
+            for pid in user_ids:
                 if pid not in ratings_map:
-                    pr = PlayerRating(player_id=pid)
+                    pr = PlayerRating(user_id=pid)
                     db.add(pr)
                     ratings_map[pid] = pr
             await db.flush()
@@ -169,14 +169,14 @@ async def recalc_ratings_after_race(race_id: int) -> None:
             new_values: dict[int, tuple[float, float, float]] = {}
 
             for rr in human_results:
-                pid = rr.player_id
+                pid = rr.user_id
                 pr = ratings_map[pid]
                 opponents = []
 
                 for other in human_results:
-                    if other.player_id == pid:
+                    if other.user_id == pid:
                         continue
-                    opr = ratings_map[other.player_id]
+                    opr = ratings_map[other.user_id]
                     score = 1.0 if rr.position < other.position else 0.0
                     opponents.append((opr.rating, opr.rd, score))
 
@@ -189,12 +189,12 @@ async def recalc_ratings_after_race(race_id: int) -> None:
                 old_rating = pr.rating
 
                 # Count wins/losses for this race
-                rr = next(r for r in human_results if r.player_id == pid)
-                wins = sum(1 for o in human_results if o.player_id != pid and rr.position < o.position)
-                losses = sum(1 for o in human_results if o.player_id != pid and rr.position > o.position)
+                rr = next(r for r in human_results if r.user_id == pid)
+                wins = sum(1 for o in human_results if o.user_id != pid and rr.position < o.position)
+                losses = sum(1 for o in human_results if o.user_id != pid and rr.position > o.position)
 
                 db.add(RatingHistory(
-                    player_id=pid,
+                    user_id=pid,
                     race_id=race_id,
                     rating_before=old_rating,
                     rating_after=new_r,

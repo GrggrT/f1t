@@ -17,7 +17,7 @@ def _steam_id64() -> str:
 class BackendContractsIntegrationTests(BackendIntegrationCase):
     def _seed_contract_state(self) -> dict:
         async def seed(session):
-            from backend.models.models import Player, Race, RaceResult, Season, SeasonContract
+            from backend.models.models import User, Race, RaceResult, Season, SeasonContract
             from shared.f1_mappings import get_team
 
             current_season = Season(
@@ -32,7 +32,7 @@ class BackendContractsIntegrationTests(BackendIntegrationCase):
                 calendar=[],
                 points_system={},
             )
-            player = Player(
+            player = User(
                 name=f"Contracts Player {uuid.uuid4().hex[:4]}",
                 steam_id64=_steam_id64(),
                 steam_names=[f"Contracts Driver {uuid.uuid4().hex[:4]}"],
@@ -45,7 +45,7 @@ class BackendContractsIntegrationTests(BackendIntegrationCase):
             session.add(
                 SeasonContract(
                     season_id=current_season.id,
-                    player_id=player.id,
+                    user_id=player.id,
                     driver_id=18,
                     driver_name="Oliver Bearman",
                     team_id=current_team_id,
@@ -79,7 +79,7 @@ class BackendContractsIntegrationTests(BackendIntegrationCase):
                         season_id=current_season.id,
                         vehicle_index=0,
                         is_human=True,
-                        player_id=player.id,
+                        user_id=player.id,
                         driver_id=18,
                         driver_name="Oliver Bearman",
                         team_id=current_team_id,
@@ -94,7 +94,7 @@ class BackendContractsIntegrationTests(BackendIntegrationCase):
                         season_id=current_season.id,
                         vehicle_index=0,
                         is_human=True,
-                        player_id=player.id,
+                        user_id=player.id,
                         driver_id=18,
                         driver_name="Oliver Bearman",
                         team_id=current_team_id,
@@ -212,7 +212,7 @@ class BackendContractsIntegrationTests(BackendIntegrationCase):
             result = await session.execute(
                 select(SeasonContract).where(
                     SeasonContract.season_id == seeded["next_season_id"],
-                    SeasonContract.player_id == seeded["player_id"],
+                    SeasonContract.user_id == seeded["player_id"],
                 )
             )
             contract = result.scalars().first()

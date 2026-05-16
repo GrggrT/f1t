@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.db.base import get_db
-from backend.models.models import WebUser, Player
+from backend.models.models import User
 from backend.services.auth_dependencies import get_current_user
 from backend.services.steam_resolver import resolve_steam_profile
 from backend.services.jwt_auth import create_token, get_user_id_from_token
@@ -63,15 +63,22 @@ def _hash(pw: str) -> str:
 def _verify(pw: str, hashed: str) -> bool:
     return bcrypt.checkpw(pw.encode(), hashed.encode())
 
-def _to_dict(u: WebUser) -> dict:
+def _to_dict(u: User) -> dict:
+    """Serialize a unified User into the legacy WebUser API shape.
+
+    Frontend code (lib/api.ts User type) still expects `picture` and
+    `player_id` keys, so we map User.avatar_url and User.legacy_player_id
+    into them. After PR 2.5 finishes, `id` is users.id (was web_users.id);
+    existing JWT tokens become invalid and trigger a re-login.
+    """
     return {
         "id":              u.id,
         "email":           u.email,
         "name":            u.name,
-        "picture":         u.picture,
+        "picture":         u.avatar_url,
         "google_id":       u.google_id,
         "steam_id64":      u.steam_id64,
-        "player_id":       u.player_id,
+        "player_id":       u.legacy_player_id,
         "is_system_admin": u.is_system_admin,
     }
 
@@ -99,12 +106,12 @@ async def web_register(req: RegisterReq, db: AsyncSession = Depends(get_db)):
         raise HTTPException(400, "Password must be at least 8 characters")
 
     exists = (await db.execute(
-        select(WebUser).where(WebUser.email == email)
+        select(User).where(User.email == email)
     )).scalars().first()
     if exists:
         raise HTTPException(409, "Email уже зарегистрирован")
 
-    user = WebUser(
+    user = User(
         email=email,
         name=req.name.strip(),
         hashed_password=_hash(req.password),
@@ -120,7 +127,7 @@ async def web_register(req: RegisterReq, db: AsyncSession = Depends(get_db)):
 @router.post("/login")
 async def web_login(req: LoginReq, db: AsyncSession = Depends(get_db)):
     user = (await db.execute(
-        select(WebUser).where(WebUser.email == req.email.lower().strip())
+        select(User).where(User.email == req.email.lower().strip())
     )).scalars().first()
     if not user or not user.hashed_password or not _verify(req.password, user.hashed_password):
         raise HTTPException(401, "Неверный email или пароль")
@@ -133,7 +140,7 @@ async def web_login(req: LoginReq, db: AsyncSession = Depends(get_db)):
 async def launcher_login(req: LoginReq, db: AsyncSession = Depends(get_db)):
     """Login from launcher — returns user + JWT token."""
     user = (await db.execute(
-        select(WebUser).where(WebUser.email == req.email.lower().strip())
+        select(User).where(User.email == req.email.lower().strip())
     )).scalars().first()
     if not user or not user.hashed_password or not _verify(req.password, user.hashed_password):
         raise HTTPException(401, "Неверный email или пароль")
@@ -151,22 +158,22 @@ async def me_by_token(request: Request, db: AsyncSession = Depends(get_db)):
     if not user_id:
         raise HTTPException(401, "Invalid or expired token")
     user = (await db.execute(
-        select(WebUser).where(WebUser.id == user_id)
+        select(User).where(User.id == user_id)
     )).scalars().first()
     if not user:
         raise HTTPException(404, "User not found")
     data = _to_dict(user)
-    if user.player_id:
-        player = (await db.execute(
-            select(Player).where(Player.id == user.player_id)
-        )).scalars().first()
-        if player:
-            data["player"] = {
-                "id": player.id,
-                "name": player.name,
-                "steam_id64": player.steam_id64,
-                "avatar_url": player.avatar_url,
-            }
+    # `player` nested block kept for frontend back-compat: it used to come from
+    # the joined Player row. After unification all those fields live on User
+    # itself; populate the same shape from User's columns when the user has
+    # any player-side identity (telegram_id or steam_id64).
+    if user.telegram_id or user.steam_id64:
+        data["player"] = {
+            "id":         user.id,
+            "name":       user.name,
+            "steam_id64": user.steam_id64,
+            "avatar_url": user.avatar_url,
+        }
     return data
 
 
@@ -212,24 +219,24 @@ async def web_google(req: GoogleLoginReq, db: AsyncSession = Depends(get_db)):
     picture = idinfo.get("picture")
 
     user = (await db.execute(
-        select(WebUser).where(WebUser.google_id == google_id)
+        select(User).where(User.google_id == google_id)
     )).scalars().first()
 
     if not user and email_lower:
         user = (await db.execute(
-            select(WebUser).where(WebUser.email == email_lower)
+            select(User).where(User.email == email_lower)
         )).scalars().first()
 
     if user:
         user.google_id = google_id
-        if picture and not user.picture:
-            user.picture = picture
+        if picture and not user.avatar_url:
+            user.avatar_url = picture
     else:
-        user = WebUser(
+        user = User(
             google_id=google_id,
             email=email_lower or None,
             name=name,
-            picture=picture,
+            avatar_url=picture,
             # System admin only when Google itself confirms the email AND
             # the email is in our admin allow-list.
             is_system_admin=bool(email_lower) and email_lower in SYSTEM_ADMIN_EMAILS,
@@ -239,14 +246,13 @@ async def web_google(req: GoogleLoginReq, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(user)
 
-    if not user.player_id and user.steam_id64:
-        p = (await db.execute(
-            select(Player).where(Player.steam_id64 == user.steam_id64)
-        )).scalars().first()
-        if p:
-            user.player_id = p.id
-            await db.commit()
-            await db.refresh(user)
+    # Auto-link to a pre-existing telemetry profile by steam_id64. With
+    # WebUser+Player unified, "auto-link" reduces to "if some other User
+    # row already owns this steam_id64, merge it" — handled by the unique
+    # constraint on User.steam_id64 (we'd hit it on INSERT above), so the
+    # only case left is enriching an already-merged row with player_id /
+    # telegram_id from the other side. After PR 2.5 final this is a no-op
+    # because there is no second row to merge from.
 
     result = _to_dict(user)
     result["token"] = create_token(user.id)
@@ -297,28 +303,26 @@ async def steam_callback(request: Request, db: AsyncSession = Depends(get_db)):
     name   = info["persona_name"] if info else f"Steam_{steam_id64[-4:]}"
     avatar = info.get("avatar_url") if info else None
 
-    # Ищем или создаём WebUser
+    # Find-or-create the unified User by steam_id64. Auto-linking to a
+    # pre-existing telemetry profile happens implicitly — if a User row
+    # with this steam_id64 already exists (came from bot /register), we
+    # reuse it and just add the auth fields.
     user = (await db.execute(
-        select(WebUser).where(WebUser.steam_id64 == steam_id64)
+        select(User).where(User.steam_id64 == steam_id64)
     )).scalars().first()
 
     if not user:
-        # Автопривязка к Player если совпадает steam_id64
-        player = (await db.execute(
-            select(Player).where(Player.steam_id64 == steam_id64)
-        )).scalars().first()
-        user = WebUser(
+        user = User(
             steam_id64=steam_id64,
             name=name,
-            picture=avatar,
-            player_id=player.id if player else None,
+            avatar_url=avatar,
         )
         db.add(user)
         await db.commit()
         await db.refresh(user)
     else:
-        if avatar and not user.picture:
-            user.picture = avatar
+        if avatar and not user.avatar_url:
+            user.avatar_url = avatar
             await db.commit()
 
     # Одноразовый код для NextAuth Credentials
@@ -353,42 +357,38 @@ async def steam_token_exchange(req: SteamTokenReq):
 
 @router.get("/me/{user_id}")
 async def web_me(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    # Allow access only to own profile or via valid auth
+    # Allow access only to own profile or via valid auth.
     from backend.services.auth_dependencies import get_current_user_optional
     auth_user = await get_current_user_optional(request, db)
 
-    # If authenticated, allow access to own profile; system admin can view any.
-    # auth_user is a `User` (Sprint 2) so compare via `.web_user_id` against
-    # the legacy `web_users.id` value carried in the URL.
-    if auth_user and auth_user.web_user_id != user_id and not auth_user.is_system_admin:
+    # auth_user is a `User`; `user_id` from the URL is users.id after PR 2.5.
+    if auth_user and auth_user.id != user_id and not auth_user.is_system_admin:
         raise HTTPException(403, "Access denied")
 
     user = (await db.execute(
-        select(WebUser).where(WebUser.id == user_id)
+        select(User).where(User.id == user_id)
     )).scalars().first()
     if not user:
         raise HTTPException(404, "Пользователь не найден")
 
     data = _to_dict(user)
 
-    # Hide sensitive fields from non-owner requests
-    if not auth_user or auth_user.web_user_id != user_id:
+    # Hide sensitive fields from non-owner requests.
+    if not auth_user or auth_user.id != user_id:
         data.pop("is_system_admin", None)
 
-    if user.player_id:
-        player = (await db.execute(
-            select(Player).where(Player.id == user.player_id)
-        )).scalars().first()
-        if player:
-            data["player"] = {
-                "id":          player.id,
-                "name":        player.name,
-                "steam_url":   player.steam_url,
-                "steam_id64":  player.steam_id64,
-                "steam_names": player.steam_names,
-                "telegram_id": player.telegram_id,
-                "avatar_url":  player.avatar_url,
-            }
+    # `player` nested block kept for back-compat — frontend reads it from
+    # /me. Populate from User's own columns since Player table is gone.
+    if user.telegram_id or user.steam_id64:
+        data["player"] = {
+            "id":          user.id,
+            "name":        user.name,
+            "steam_url":   user.steam_url,
+            "steam_id64":  user.steam_id64,
+            "steam_names": user.steam_names or [],
+            "telegram_id": user.telegram_id,
+            "avatar_url":  user.avatar_url,
+        }
 
     return data
 
@@ -399,34 +399,20 @@ class LinkPlayerReq(BaseModel):
 @router.post("/link-player")
 async def link_player(
     req: LinkPlayerReq,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bind the caller's WebUser to a Player row.
+    """DEPRECATED in Sprint 2 PR 2.5.
 
-    Ownership check: the dependency injects the User from the Bearer
-    token, and we only ever mutate that user's web_users.player_id —
-    no way to link another user's account.
-
-    Sprint 2 / PR 2.2: writes go to the legacy `web_users.player_id`
-    column directly; the trigger from 0014 mirrors the link into
-    `users.legacy_player_id` (and `users.user_id`-flavoured FKs on
-    dependent tables) automatically.
+    The unified `users` table already merges WebUser+Player by email and by
+    steam_id64 on creation. There is no separate Player record to "link" to.
+    The frontend stopped sending this in PR 2.4; the endpoint returns 410
+    Gone for any stragglers (CLI tooling, third-party scripts, etc).
     """
-    player = (await db.execute(
-        select(Player).where(Player.id == req.player_id)
-    )).scalars().first()
-    if not player:
-        raise HTTPException(404, "Игрок не найден")
-
-    web_user = await db.get(WebUser, user.web_user_id)
-    if web_user is None:
-        raise HTTPException(404, "Web user record missing")
-    web_user.player_id = req.player_id
-    if web_user.picture and not player.avatar_url:
-        player.avatar_url = web_user.picture
-    await db.commit()
-    return {"ok": True, "player_name": player.name}
+    raise HTTPException(
+        status_code=410,
+        detail="link-player removed in Sprint 2 — identity is unified by email/steam.",
+    )
 
 
 # ── Launcher Poll Auth (Google login via browser) ─────────────────────────────
@@ -437,7 +423,7 @@ class LauncherAuthReq(BaseModel):
 @router.post("/launcher/auth")
 async def launcher_auth_complete(
     req: LauncherAuthReq,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Website calls this after user logs in, to provide token to launcher."""

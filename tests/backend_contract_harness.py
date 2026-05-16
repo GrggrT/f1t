@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.db.base import get_db
-from backend.models.models import LapTelemetry, Lobby, Race, RaceResult, RaceSessionHistory, Season, WebUser
+from backend.models.models import LapTelemetry, Lobby, Race, RaceResult, RaceSessionHistory, Season, User
 from backend.routers import lobby, races, telemetry
 from backend.services.auth_dependencies import get_current_user, get_current_user_optional, verify_agent_token
 
@@ -104,8 +104,8 @@ class _FakeAsyncSession:
 def _build_app(
     *routers,
     db: _FakeAsyncSession,
-    user: WebUser | None = None,
-    optional_user: WebUser | None = None,
+    user: User | None = None,
+    optional_user: User | None = None,
 ) -> FastAPI:
     app = FastAPI()
     for router in routers:
@@ -343,13 +343,13 @@ def _check_session_history_overview_contract() -> SmokeCheck:
 
 
 def _check_host_seasons_contract() -> SmokeCheck:
-    lobby_row = Lobby(id=10, name="Night League", description="Core lobby", creator_id=7)
+    lobby_row = Lobby(id=10, name="Night League", description="Core lobby", creator_user_id=7)
     season_completed = Season(
         id=201,
         name="Season Completed",
         status="completed",
         calendar=[{"round": 1}],
-        creator_id=7,
+        creator_user_id=7,
         lobby_id=10,
         created_at=_now(),
     )
@@ -358,7 +358,7 @@ def _check_host_seasons_contract() -> SmokeCheck:
         name="Season Active",
         status="active",
         calendar=[{"round": 1}, {"round": 2}],
-        creator_id=7,
+        creator_user_id=7,
         lobby_id=10,
         created_at=_now(),
     )
@@ -373,7 +373,7 @@ def _check_host_seasons_contract() -> SmokeCheck:
         _FakeResult(scalar_value=5),
         _FakeResult(scalar_value=1),
     ])
-    user = WebUser(id=7, name="Launcher User")
+    user = User(id=7, name="Launcher User")
     app = _build_app(lobby.router, db=db, user=user)
     response = TestClient(app).get("/api/lobby/host-seasons")
 

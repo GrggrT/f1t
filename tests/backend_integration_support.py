@@ -408,12 +408,12 @@ class BackendIntegrationCase(unittest.TestCase):
 
         async def _promote(session):
             from sqlalchemy import select
-            from backend.models.models import WebUser
+            from backend.models.models import User
 
             row = (await session.execute(
-                select(WebUser).where(WebUser.id == u["id"])
+                select(User).where(User.id == u["id"])
             )).scalars().first()
-            assert row is not None, f"WebUser id={u['id']} missing after register"
+            assert row is not None, f"User id={u['id']} missing after register"
             row.is_system_admin = True
             await session.commit()
 

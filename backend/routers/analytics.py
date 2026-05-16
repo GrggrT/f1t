@@ -15,9 +15,9 @@ from pydantic import BaseModel
 
 from backend.db.base import get_db
 from backend.models.models import (
-    Player, Race, RaceResult, RaceEvent, Season,
+    Race, RaceResult, RaceEvent, Season,
     ChampionshipStanding, PlayerRating, RatingHistory, PlayerAchievement, Achievement,
-    WebUser,
+    User,
 )
 from backend.services.auth_dependencies import get_current_user
 
@@ -31,10 +31,11 @@ router = APIRouter(prefix="/api", tags=["analytics"])
 @router.get("/player/{player_id}/trends")
 async def get_player_trends(player_id: int, season_id: int | None = None,
                             db: AsyncSession = Depends(get_db)):
+    """`player_id` path param == users.id after Sprint 2."""
     query = (
         select(RaceResult, Race.round_number, Race.track_name, Race.season_id)
         .join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player_id)
+        .where(RaceResult.user_id == player_id)
     )
     if season_id:
         query = query.where(RaceResult.season_id == season_id)
@@ -78,12 +79,11 @@ async def get_player_trends(player_id: int, season_id: int | None = None,
 
 @router.get("/player/{player_id}/h2h/{other_id}")
 async def get_h2h(player_id: int, other_id: int, db: AsyncSession = Depends(get_db)):
-    # Get all races where both participated
     p1_res = await db.execute(
-        select(RaceResult).where(RaceResult.player_id == player_id)
+        select(RaceResult).where(RaceResult.user_id == player_id)
     )
     p2_res = await db.execute(
-        select(RaceResult).where(RaceResult.player_id == other_id)
+        select(RaceResult).where(RaceResult.user_id == other_id)
     )
     p1_results = {r.race_id: r for r in p1_res.scalars().all()}
     p2_results = {r.race_id: r for r in p2_res.scalars().all()}
@@ -92,15 +92,13 @@ async def get_h2h(player_id: int, other_id: int, db: AsyncSession = Depends(get_
     if not common_races:
         return {"races_together": 0}
 
-    # Load race info
     races_res = await db.execute(
         select(Race).where(Race.id.in_(common_races)).order_by(Race.raced_at)
     )
     races = {r.id: r for r in races_res.scalars().all()}
 
-    # Load player names
-    p1 = await db.get(Player, player_id)
-    p2 = await db.get(Player, other_id)
+    p1 = await db.get(User, player_id)
+    p2 = await db.get(User, other_id)
 
     p1_wins = 0
     p2_wins = 0
@@ -166,14 +164,14 @@ async def get_h2h(player_id: int, other_id: int, db: AsyncSession = Depends(get_
 @router.get("/player/{player_id}/tyre-stats")
 async def get_tyre_stats(player_id: int, season_id: int | None = None,
                          db: AsyncSession = Depends(get_db)):
-    query = select(RaceResult).where(RaceResult.player_id == player_id)
+    query = select(RaceResult).where(RaceResult.user_id == player_id)
     if season_id:
         query = query.where(RaceResult.season_id == season_id)
 
     res = await db.execute(query)
     results = res.scalars().all()
 
-    compound_data: dict[str, dict] = {}  # compound → {laps: [], lap_times: []}
+    compound_data: dict[str, dict] = {}
 
     for rr in results:
         stints = rr.tyre_stints or []
@@ -210,21 +208,19 @@ async def get_cross_season(player_id: int, db: AsyncSession = Depends(get_db)):
     standings_res = await db.execute(
         select(ChampionshipStanding, Season.name, Season.status)
         .join(Season, ChampionshipStanding.season_id == Season.id)
-        .where(ChampionshipStanding.player_id == player_id)
+        .where(ChampionshipStanding.user_id == player_id)
         .order_by(Season.id)
     )
     rows = standings_res.all()
 
-    # Also get per-race data for overlay charts
     races_res = await db.execute(
         select(RaceResult, Race.round_number, Race.season_id)
         .join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player_id)
+        .where(RaceResult.user_id == player_id)
         .order_by(Race.season_id, Race.round_number)
     )
     race_rows = races_res.all()
 
-    # Group races by season
     season_races: dict[int, list] = {}
     for rr, rnd, sid in race_rows:
         season_races.setdefault(sid, []).append({
@@ -259,14 +255,14 @@ async def get_cross_season(player_id: int, db: AsyncSession = Depends(get_db)):
 @router.get("/ratings")
 async def get_ratings(db: AsyncSession = Depends(get_db)):
     res = await db.execute(
-        select(PlayerRating, Player.name)
-        .join(Player, Player.id == PlayerRating.player_id)
+        select(PlayerRating, User.name)
+        .join(User, User.id == PlayerRating.user_id)
         .order_by(PlayerRating.rating.desc())
     )
     rows = res.all()
     return [
         {
-            "player_id":   pr.player_id,
+            "player_id":   pr.user_id,
             "name":        pname,
             "rating":      round(pr.rating, 1),
             "rd":          round(pr.rd, 1),
@@ -288,7 +284,7 @@ async def get_rating_history(player_id: int, db: AsyncSession = Depends(get_db))
     res = await db.execute(
         select(RatingHistory, Race.round_number, Race.track_name, Race.season_id)
         .join(Race, Race.id == RatingHistory.race_id)
-        .where(RatingHistory.player_id == player_id)
+        .where(RatingHistory.user_id == player_id)
         .order_by(RatingHistory.recorded_at)
     )
     rows = res.all()
@@ -312,17 +308,13 @@ async def get_rating_history(player_id: int, db: AsyncSession = Depends(get_db))
 
 @router.get("/player/{player_id}/full-profile")
 async def get_full_profile(player_id: int, db: AsyncSession = Depends(get_db)):
-    """
-    Complete profile data for public profile page.
-    Combines stats, rating, achievements, trends, season history.
-    """
-    player_res = await db.execute(select(Player).where(Player.id == player_id))
-    player = player_res.scalars().first()
-    if not player:
+    """Complete profile data for public profile page."""
+    user_res = await db.execute(select(User).where(User.id == player_id))
+    target = user_res.scalars().first()
+    if not target:
         raise HTTPException(404, "Player not found")
 
-    # Basic stats
-    results_res = await db.execute(select(RaceResult).where(RaceResult.player_id == player_id))
+    results_res = await db.execute(select(RaceResult).where(RaceResult.user_id == player_id))
     results = results_res.scalars().all()
 
     positions = [r.position for r in results if r.position]
@@ -344,9 +336,8 @@ async def get_full_profile(player_id: int, db: AsyncSession = Depends(get_db)):
         "worst_drop":    min(grid_deltas) if grid_deltas else None,
     }
 
-    # Rating
     rating_res = await db.execute(
-        select(PlayerRating).where(PlayerRating.player_id == player_id)
+        select(PlayerRating).where(PlayerRating.user_id == player_id)
     )
     rating_obj = rating_res.scalars().first()
     rating = {
@@ -356,11 +347,10 @@ async def get_full_profile(player_id: int, db: AsyncSession = Depends(get_db)):
         "races_rated": rating_obj.races_rated if rating_obj else 0,
     }
 
-    # Achievements
     ach_res = await db.execute(
         select(PlayerAchievement, Achievement)
         .join(Achievement, Achievement.id == PlayerAchievement.achievement_id)
-        .where(PlayerAchievement.player_id == player_id)
+        .where(PlayerAchievement.user_id == player_id)
         .order_by(PlayerAchievement.unlocked_at)
     )
     achievements = [
@@ -374,11 +364,10 @@ async def get_full_profile(player_id: int, db: AsyncSession = Depends(get_db)):
         for pa, a in ach_res.all()
     ]
 
-    # Season history
     sh_res = await db.execute(
         select(ChampionshipStanding, Season.name, Season.status)
         .join(Season, ChampionshipStanding.season_id == Season.id)
-        .where(ChampionshipStanding.player_id == player_id)
+        .where(ChampionshipStanding.user_id == player_id)
         .order_by(Season.id)
     )
     season_history = [
@@ -399,7 +388,6 @@ async def get_full_profile(player_id: int, db: AsyncSession = Depends(get_db)):
         for cs, sname, sstatus in sh_res.all()
     ]
 
-    # Last team/driver assignment
     latest_result = next(
         iter(sorted(results, key=lambda r: r.race_id, reverse=True)),
         None,
@@ -407,10 +395,10 @@ async def get_full_profile(player_id: int, db: AsyncSession = Depends(get_db)):
 
     return {
         "player_id":      player_id,
-        "name":           player.name,
-        "avatar_url":     player.avatar_url,
-        "steam_url":      player.steam_url,
-        "created_at":     player.created_at.isoformat() if player.created_at else None,
+        "name":           target.name,
+        "avatar_url":     target.avatar_url,
+        "steam_url":      target.steam_url,
+        "created_at":     target.created_at.isoformat() if target.created_at else None,
         "current_team":   latest_result.team_name if latest_result else None,
         "current_driver": latest_result.driver_name if latest_result else None,
         "stats":          stats,
@@ -433,12 +421,11 @@ async def predict_race(
     season_id: int,
     req: PredictRequest = PredictRequest(),
     db: AsyncSession = Depends(get_db),
-    _: WebUser = Depends(get_current_user),
+    _: User = Depends(get_current_user),
 ):
     """AI prediction for next race using Groq."""
     import os, httpx
 
-    # Get standings
     standings_res = await db.execute(
         select(ChampionshipStanding).where(
             ChampionshipStanding.season_id == season_id,
@@ -450,17 +437,15 @@ async def predict_race(
     if not standings:
         raise HTTPException(400, "No standings data")
 
-    # Get last 5 race results per human
-    player_ids = [s.player_id for s in standings if s.player_id]
+    user_ids = [s.user_id for s in standings if s.user_id]
     recent_res = await db.execute(
         select(RaceResult, Race.round_number, Race.track_name)
         .join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id.in_(player_ids), RaceResult.season_id == season_id)
-        .order_by(Race.round_number.desc()).limit(len(player_ids) * 5)
+        .where(RaceResult.user_id.in_(user_ids), RaceResult.season_id == season_id)
+        .order_by(Race.round_number.desc()).limit(len(user_ids) * 5)
     )
     recent = recent_res.all()
 
-    # Build context for AI
     standings_text = "\n".join(
         f"P{i+1}. {s.driver_name} ({s.team_name}) — {s.total_points} pts, "
         f"{s.wins}W {s.podiums}P {s.dnfs}DNF, CI={s.consistency_index or 'N/A'}"

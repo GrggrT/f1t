@@ -182,7 +182,7 @@ async def submit_race(
             season_id=payload.season_id,
             vehicle_index=p.vehicle_index,
             is_human=p.is_human,
-            player_id=player_map.get(p.vehicle_index) if p.is_human else None,
+            user_id=player_map.get(p.vehicle_index) if p.is_human else None,
             driver_id=p.driver_id,
             driver_name=driver["name"],
             team_id=p.team_id,
@@ -309,7 +309,7 @@ async def get_race(race_id: int, db: AsyncSession = Depends(get_db)):
             {
                 "vehicle_index":   r.vehicle_index,
                 "is_human":        r.is_human,
-                "player_id":       r.player_id,
+                "player_id":       r.user_id,
                 "driver_id":       r.driver_id,
                 "driver_name":     r.driver_name,
                 "team_id":         r.team_id,

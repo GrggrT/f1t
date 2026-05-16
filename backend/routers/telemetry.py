@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.db.base import get_db
-from backend.models.models import LapTelemetry, RaceResult, RaceSessionHistory, Race, WebUser
+from backend.models.models import LapTelemetry, RaceResult, RaceSessionHistory, Race, User
 from backend.services.auth_dependencies import get_current_user, verify_agent_token
 
 router = APIRouter(prefix="/api/telemetry", tags=["telemetry"])
@@ -795,14 +795,16 @@ async def race_debrief(
     race_id: int,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    _: WebUser = Depends(get_current_user),
+    _: User = Depends(get_current_user),
 ):
     """AI race debrief with corner-specific telemetry analysis."""
     import os, httpx
 
-    web_user_id = body.get("web_user_id")
-    if not web_user_id:
-        raise HTTPException(400, "web_user_id required")
+    # `web_user_id` field name preserved for back-compat with old launcher/agent
+    # builds; treated as users.id (with fallback to legacy_web_user_id lookup).
+    requested_user_id = body.get("web_user_id") or body.get("user_id")
+    if not requested_user_id:
+        raise HTTPException(400, "user_id required")
 
     groq_key = os.getenv("GROQ_API_KEY", "")
     groq_url = os.getenv("GROQ_URL", "https://api.groq.com/openai/v1/chat/completions")
@@ -810,11 +812,12 @@ async def race_debrief(
     if not groq_key:
         return {"debrief": "Race engineer unavailable — GROQ_API_KEY not set."}
 
-    # Find player's vehicle in this race
-    from backend.models.models import WebUser, Player
-    user_row = await db.execute(select(WebUser).where(WebUser.id == web_user_id))
-    user = user_row.scalars().first()
-    player_id = user.player_id if user else None
+    from sqlalchemy import or_
+    user_row = await db.execute(
+        select(User).where(or_(User.id == requested_user_id, User.legacy_web_user_id == requested_user_id))
+    )
+    user_record = user_row.scalars().first()
+    player_id = user_record.id if user_record else None
 
     # Get race info
     race_row = await db.execute(select(Race).where(Race.id == race_id))
@@ -851,7 +854,7 @@ async def race_debrief(
                 if s2s: best_s2 = f"{min(s2s)/1000:.3f}"
                 if s3s: best_s3 = f"{min(s3s)/1000:.3f}"
 
-        marker = " ← THIS DRIVER" if r.player_id == player_id and player_id else ""
+        marker = " ← THIS DRIVER" if r.user_id == player_id and player_id else ""
         context_parts.append(
             f"P{r.position} {r.driver_name} ({r.team_name}) - Best: {r.best_lap_ms}ms, "
             f"Sectors: {best_s1}/{best_s2}/{best_s3}, Pits: {r.num_pit_stops}, "

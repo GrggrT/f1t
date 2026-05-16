@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy import select, func, and_
 from backend.db.base import get_database_url
 from backend.models.models import (
-    Race, RaceResult, RaceEvent, Player, Season,
+    Race, RaceResult, RaceEvent, User, Season,
     Achievement, PlayerAchievement, ChampionshipStanding,
 )
 
@@ -33,10 +33,10 @@ async def check_achievements_after_race(race_id: int, season_id: int) -> list[di
             if not race or not results:
                 return []
 
-            human_results = [r for r in results if r.is_human and r.player_id]
+            human_results = [r for r in results if r.is_human and r.user_id]
 
             for rr in human_results:
-                player = await db.get(Player, rr.player_id)
+                player = await db.get(User, rr.user_id)
                 if not player:
                     continue
 
@@ -54,7 +54,7 @@ async def check_achievements_after_race(race_id: int, season_id: int) -> list[di
 # ---------------------------------------------------------------------------
 
 async def _check_player(
-    db: AsyncSession, player: Player, rr: RaceResult,
+    db: AsyncSession, player: User, rr: RaceResult,
     race: Race, all_results: list[RaceResult],
     events: list[RaceEvent], season_id: int,
 ) -> list[dict]:
@@ -98,7 +98,7 @@ async def _check_player(
     return new_unlocks
 
 
-async def _unlock(db: AsyncSession, player: Player, code: str, race_id: int, rr: RaceResult) -> dict | None:
+async def _unlock(db: AsyncSession, player: User, code: str, race_id: int, rr: RaceResult) -> dict | None:
     ach_res = await db.execute(select(Achievement).where(Achievement.code == code))
     ach = ach_res.scalars().first()
     if not ach:
@@ -106,7 +106,7 @@ async def _unlock(db: AsyncSession, player: Player, code: str, race_id: int, rr:
 
     existing = await db.execute(
         select(PlayerAchievement).where(
-            PlayerAchievement.player_id == player.id,
+            PlayerAchievement.user_id == player.id,
             PlayerAchievement.achievement_id == ach.id,
         )
     )
@@ -114,7 +114,7 @@ async def _unlock(db: AsyncSession, player: Player, code: str, race_id: int, rr:
         return None
 
     db.add(PlayerAchievement(
-        player_id=player.id, achievement_id=ach.id, race_id=race_id,
+        user_id=player.id, achievement_id=ach.id, race_id=race_id,
         context={"position": rr.position, "points": rr.points},
     ))
     print(f"[ACH] {player.name} unlocked: {ach.icon} {ach.name}")
@@ -133,7 +133,7 @@ async def _check_first_blood(db, player, rr, race, all_results, events, season_i
         return None
     prev_wins = await db.execute(
         select(func.count()).select_from(RaceResult).where(
-            RaceResult.player_id == player.id, RaceResult.position == 1,
+            RaceResult.user_id == player.id, RaceResult.position == 1,
             RaceResult.race_id != race.id,
         )
     )
@@ -215,9 +215,9 @@ async def _check_giant_killer(db, player, rr, race, all_results, events, season_
         ).order_by(ChampionshipStanding.total_points.desc()).limit(1)
     )
     leader = leader_res.scalars().first()
-    if not leader or leader.player_id == player.id:
+    if not leader or leader.user_id == player.id:
         return None
-    leader_result = next((r for r in all_results if r.player_id == leader.player_id), None)
+    leader_result = next((r for r in all_results if r.user_id == leader.user_id), None)
     if leader_result and leader_result.position and rr.position < leader_result.position:
         return "GIANT_KILLER"
     return None
@@ -228,7 +228,7 @@ async def _check_dominator(db, player, rr, race, all_results, events, season_id)
         return None
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id, RaceResult.season_id == season_id)
+        .where(RaceResult.user_id == player.id, RaceResult.season_id == season_id)
         .order_by(Race.round_number.desc()).limit(3)
     )
     last3 = recent.scalars().all()
@@ -240,7 +240,7 @@ async def _check_consistency_king(db, player, rr, race, all_results, events, sea
         return None
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id, RaceResult.season_id == season_id)
+        .where(RaceResult.user_id == player.id, RaceResult.season_id == season_id)
         .order_by(Race.round_number.desc()).limit(5)
     )
     last5 = recent.scalars().all()
@@ -254,7 +254,7 @@ async def _check_weekend_warrior(db, player, rr, race, all_results, events, seas
     same_day = await db.execute(
         select(func.count()).select_from(RaceResult)
         .join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id, func.date(Race.raced_at) == race_date)
+        .where(RaceResult.user_id == player.id, func.date(Race.raced_at) == race_date)
     )
     return "WEEKEND_WARRIOR" if (same_day.scalar() or 0) >= 3 else None
 
@@ -262,7 +262,7 @@ async def _check_weekend_warrior(db, player, rr, race, all_results, events, seas
 async def _check_centurion(db, player, rr, race, all_results, events, season_id):
     total_pts = await db.execute(
         select(func.sum(RaceResult.points)).where(
-            RaceResult.player_id == player.id, RaceResult.season_id == season_id,
+            RaceResult.user_id == player.id, RaceResult.season_id == season_id,
         )
     )
     pts = total_pts.scalar() or 0
@@ -277,7 +277,7 @@ async def _check_bot_slayer(db, player, rr, race, all_results, events, season_id
         return None
     count_res = await db.execute(
         select(func.count()).select_from(RaceResult)
-        .where(RaceResult.player_id == player.id, RaceResult.season_id == season_id)
+        .where(RaceResult.user_id == player.id, RaceResult.season_id == season_id)
     )
     return "BOT_SLAYER" if (count_res.scalar() or 0) >= 5 else None
 
@@ -331,7 +331,7 @@ async def _check_rain_dance(db, player, rr, race, all_results, events, season_id
         select(func.count()).select_from(RaceResult)
         .join(Race, Race.id == RaceResult.race_id)
         .where(
-            RaceResult.player_id == player.id, RaceResult.season_id == season_id,
+            RaceResult.user_id == player.id, RaceResult.season_id == season_id,
             RaceResult.position <= 3, Race.weather_start >= 3,
         )
     )
@@ -356,7 +356,7 @@ async def _check_double_points(db, player, rr, race, all_results, events, season
         select(func.count()).select_from(RaceResult)
         .join(Race, Race.id == RaceResult.race_id)
         .where(
-            RaceResult.player_id == player.id,
+            RaceResult.user_id == player.id,
             RaceResult.position <= 3,
             func.date(Race.raced_at) == race_date,
         )
@@ -370,7 +370,7 @@ async def _check_marathon_man(db, player, rr, race, all_results, events, season_
         return None
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id, RaceResult.season_id == season_id)
+        .where(RaceResult.user_id == player.id, RaceResult.season_id == season_id)
         .order_by(Race.round_number.desc()).limit(4)
     )
     last4 = recent.scalars().all()
@@ -381,7 +381,7 @@ async def _check_penalty_free(db, player, rr, race, all_results, events, season_
     """10 гонок подряд без штрафов."""
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id)
+        .where(RaceResult.user_id == player.id)
         .order_by(Race.round_number.desc()).limit(10)
     )
     last10 = recent.scalars().all()
@@ -419,7 +419,7 @@ async def _check_bulldozer(db, player, rr, race, all_results, events, season_id)
     """P1 среди всех людей."""
     if not rr.position:
         return None
-    human_positions = [r.position for r in all_results if r.is_human and r.player_id != player.id and r.position]
+    human_positions = [r.position for r in all_results if r.is_human and r.user_id != player.id and r.position]
     if not human_positions:
         return None
     return "BULLDOZER" if rr.position < min(human_positions) else None
@@ -433,7 +433,7 @@ async def _check_rising_star(db, player, rr, race, all_results, events, season_i
     """5 гонок подряд с улучшением позиции."""
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id, RaceResult.season_id == season_id)
+        .where(RaceResult.user_id == player.id, RaceResult.season_id == season_id)
         .order_by(Race.round_number.desc()).limit(5)
     )
     last5 = recent.scalars().all()
@@ -456,7 +456,7 @@ async def _check_hot_streak(db, player, rr, race, all_results, events, season_id
         select(func.count()).select_from(RaceResult)
         .join(Race, Race.id == RaceResult.race_id)
         .where(
-            RaceResult.player_id == player.id, RaceResult.position == 1,
+            RaceResult.user_id == player.id, RaceResult.position == 1,
             func.date(Race.raced_at) == race_date,
         )
     )
@@ -465,14 +465,14 @@ async def _check_hot_streak(db, player, rr, race, all_results, events, season_id
 
 async def _check_fifty_races(db, player, rr, race, all_results, events, season_id):
     total = await db.execute(
-        select(func.count()).select_from(RaceResult).where(RaceResult.player_id == player.id)
+        select(func.count()).select_from(RaceResult).where(RaceResult.user_id == player.id)
     )
     return "FIFTY_RACES" if (total.scalar() or 0) >= 50 else None
 
 
 async def _check_hundred_races(db, player, rr, race, all_results, events, season_id):
     total = await db.execute(
-        select(func.count()).select_from(RaceResult).where(RaceResult.player_id == player.id)
+        select(func.count()).select_from(RaceResult).where(RaceResult.user_id == player.id)
     )
     return "HUNDRED_RACES" if (total.scalar() or 0) >= 100 else None
 
@@ -483,7 +483,7 @@ async def _check_points_machine(db, player, rr, race, all_results, events, seaso
         return None
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id)
+        .where(RaceResult.user_id == player.id)
         .order_by(Race.round_number.desc()).limit(10)
     )
     last10 = recent.scalars().all()
@@ -493,7 +493,7 @@ async def _check_points_machine(db, player, rr, race, all_results, events, seaso
 async def _check_two_hundred_pts(db, player, rr, race, all_results, events, season_id):
     total_pts = await db.execute(
         select(func.sum(RaceResult.points)).where(
-            RaceResult.player_id == player.id, RaceResult.season_id == season_id,
+            RaceResult.user_id == player.id, RaceResult.season_id == season_id,
         )
     )
     return "TWO_HUNDRED_PTS" if (total_pts.scalar() or 0) >= 200 else None
@@ -504,7 +504,7 @@ async def _check_veteran(db, player, rr, race, all_results, events, season_id):
     seasons_count = await db.execute(
         select(func.count(func.distinct(RaceResult.season_id)))
         .select_from(RaceResult)
-        .where(RaceResult.player_id == player.id)
+        .where(RaceResult.user_id == player.id)
     )
     return "VETERAN" if (seasons_count.scalar() or 0) >= 3 else None
 
@@ -536,7 +536,7 @@ async def _check_reverse_grid(db, player, rr, race, all_results, events, season_
         return None
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id)
+        .where(RaceResult.user_id == player.id)
         .order_by(Race.round_number.desc()).limit(5)
     )
     last5 = recent.scalars().all()
@@ -551,13 +551,13 @@ async def _check_sunday_driver(db, player, rr, race, all_results, events, season
     """Самый медленный лучший круг среди людей 3 раза подряд."""
     if not rr.best_lap_ms:
         return None
-    human_laps = [r.best_lap_ms for r in all_results if r.is_human and r.best_lap_ms and r.player_id]
+    human_laps = [r.best_lap_ms for r in all_results if r.is_human and r.best_lap_ms and r.user_id]
     if not human_laps or rr.best_lap_ms < max(human_laps):
         return None  # not the slowest this race
     # Check last 3 races
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id)
+        .where(RaceResult.user_id == player.id)
         .order_by(Race.round_number.desc()).limit(3)
     )
     # Simplified: if slowest this race, check pattern
@@ -581,7 +581,7 @@ async def _check_jinxed(db, player, rr, race, all_results, events, season_id):
         return None
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id)
+        .where(RaceResult.user_id == player.id)
         .order_by(Race.round_number.desc()).limit(3)
     )
     last3 = recent.scalars().all()
@@ -594,7 +594,7 @@ async def _check_phoenix(db, player, rr, race, all_results, events, season_id):
         return None
     recent = await db.execute(
         select(RaceResult).join(Race, Race.id == RaceResult.race_id)
-        .where(RaceResult.player_id == player.id, RaceResult.race_id != race.id)
+        .where(RaceResult.user_id == player.id, RaceResult.race_id != race.id)
         .order_by(Race.round_number.desc()).limit(3)
     )
     prev3 = recent.scalars().all()
@@ -606,7 +606,7 @@ async def _check_gentleman(db, player, rr, race, all_results, events, season_id)
     # Count total races and collision events for this player in season
     races_count = await db.execute(
         select(func.count()).select_from(RaceResult)
-        .where(RaceResult.player_id == player.id, RaceResult.season_id == season_id)
+        .where(RaceResult.user_id == player.id, RaceResult.season_id == season_id)
     )
     if (races_count.scalar() or 0) < 5:
         return None
@@ -621,7 +621,7 @@ async def _check_gentleman(db, player, rr, race, all_results, events, season_id)
     # Get all vehicle_indexes for this player in season
     vidx_res = await db.execute(
         select(RaceResult.vehicle_index, RaceResult.race_id)
-        .where(RaceResult.player_id == player.id, RaceResult.race_id.in_(race_ids))
+        .where(RaceResult.user_id == player.id, RaceResult.race_id.in_(race_ids))
     )
     player_vidx_map = {row.race_id: row.vehicle_index for row in vidx_res.all()}
 

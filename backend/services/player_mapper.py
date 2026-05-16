@@ -1,5 +1,6 @@
 """
-Маппинг steam_name → player из БД.
+Маппинг steam_name → User из БД (бывший Player после Sprint 2 / PR 2.5).
+
 Порядок поиска:
   1. Точное совпадение в steam_names[] (кэш)
   2. Fallback: резолвим текущий ник через Steam API по steam_id64
@@ -7,65 +8,62 @@
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from backend.models.models import Player
+from backend.models.models import User
 
 
-async def find_player_by_steam_name(db: AsyncSession, steam_name: str) -> Player | None:
-    """Ищет игрока у которого steam_name есть в массиве steam_names."""
+async def find_player_by_steam_name(db: AsyncSession, steam_name: str) -> User | None:
+    """Ищет пользователя у которого steam_name есть в массиве steam_names."""
     result = await db.execute(
-        select(Player).where(Player.steam_names.any(steam_name))
+        select(User).where(User.steam_names.any(steam_name))
     )
     return result.scalars().first()
 
 
-async def find_player_by_steam_name_with_fallback(db: AsyncSession, steam_name: str) -> Player | None:
+async def find_player_by_steam_name_with_fallback(db: AsyncSession, steam_name: str) -> User | None:
     """
     Расширенный поиск:
     1. Проверяем кэш steam_names[]
-    2. Если не найдено — для каждого игрока с steam_id64 резолвим текущий ник
-       через Steam XML API. Если совпало — обновляем кэш и возвращаем игрока.
+    2. Если не найдено — для каждого пользователя с steam_id64 резолвим текущий ник
+       через Steam XML API. Если совпало — обновляем кэш и возвращаем User.
     """
-    # Быстрый путь — кэш
-    player = await find_player_by_steam_name(db, steam_name)
-    if player:
-        return player
+    user = await find_player_by_steam_name(db, steam_name)
+    if user:
+        return user
 
-    # Fallback — проверяем актуальный ник через Steam
     from backend.services.steam_resolver import fetch_current_name
 
     result = await db.execute(
-        select(Player).where(Player.steam_id64.isnot(None))
+        select(User).where(User.steam_id64.isnot(None))
     )
-    players_with_steam = result.scalars().all()
+    users_with_steam = result.scalars().all()
 
-    for p in players_with_steam:
-        current_name = await fetch_current_name(p.steam_id64)
+    for u in users_with_steam:
+        current_name = await fetch_current_name(u.steam_id64)
         if current_name and current_name.lower() == steam_name.lower():
-            # Имя совпало — обновляем кэш чтобы следующий раз не делать запрос
-            names = list(p.steam_names or [])
+            names = list(u.steam_names or [])
             if steam_name not in names:
                 names.append(steam_name)
-                p.steam_names = names
+                u.steam_names = names
                 await db.commit()
-            return p
+            return u
 
     return None
 
 
-async def add_steam_name(db: AsyncSession, player_id: int, steam_name: str) -> Player | None:
-    """Добавляет новое steam имя в историю игрока."""
-    result = await db.execute(select(Player).where(Player.id == player_id))
-    player = result.scalars().first()
-    if not player:
+async def add_steam_name(db: AsyncSession, user_id: int, steam_name: str) -> User | None:
+    """Добавляет новое steam имя в историю пользователя."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if not user:
         return None
 
-    names = list(player.steam_names or [])
+    names = list(user.steam_names or [])
     if steam_name not in names:
         names.append(steam_name)
-        player.steam_names = names
+        user.steam_names = names
         await db.commit()
-        await db.refresh(player)
-    return player
+        await db.refresh(user)
+    return user
 
 
 async def resolve_participants(
@@ -73,11 +71,11 @@ async def resolve_participants(
     participants: list[dict],
 ) -> tuple[dict[int, int], list[str]]:
     """
-    Сопоставляет vehicle_index → player_id для всех human участников.
+    Сопоставляет vehicle_index → user_id для всех human участников.
     Использует расширенный поиск с fallback через Steam API.
 
     Возвращает:
-    - mapped: {vehicle_index: player_id}
+    - mapped: {vehicle_index: user_id}
     - unresolved: список steam_name которые не нашлись
     """
     mapped: dict[int, int] = {}
@@ -91,9 +89,9 @@ async def resolve_participants(
         if not steam_name:
             continue
 
-        player = await find_player_by_steam_name_with_fallback(db, steam_name)
-        if player:
-            mapped[p["vehicle_index"]] = player.id
+        user = await find_player_by_steam_name_with_fallback(db, steam_name)
+        if user:
+            mapped[p["vehicle_index"]] = user.id
         else:
             unresolved.append(steam_name)
 

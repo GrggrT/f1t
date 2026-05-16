@@ -7,7 +7,7 @@ import statistics
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select, func
 from backend.db.base import get_database_url
-from backend.models.models import Race, RaceResult, RaceEvent, Player
+from backend.models.models import Race, RaceResult, RaceEvent, User
 
 
 async def compute_fun_stats(season_id: int) -> list[dict] | None:
@@ -27,8 +27,8 @@ async def compute_fun_stats(season_id: int) -> list[dict] | None:
             race_ids = [r.id for r in races]
 
             results_res = await db.execute(
-                select(RaceResult, Player.name.label("player_name"))
-                .join(Player, Player.id == RaceResult.player_id, isouter=True)
+                select(RaceResult, User.name.label("player_name"))
+                .join(User, User.id == RaceResult.user_id, isouter=True)
                 .where(RaceResult.race_id.in_(race_ids), RaceResult.is_human == True)  # noqa
             )
             rows = results_res.all()
@@ -43,10 +43,10 @@ async def compute_fun_stats(season_id: int) -> list[dict] | None:
     if not rows:
         return None
 
-    # Группируем по player_id
+    # Группируем по user_id
     players: dict[int, dict] = {}
     for rr, pname in rows:
-        pid = rr.player_id
+        pid = rr.user_id
         if pid not in players:
             players[pid] = {
                 "name":           pname or f"Player#{pid}",
@@ -87,7 +87,7 @@ async def compute_fun_stats(season_id: int) -> list[dict] | None:
                 overtake_counts[vidx] = overtake_counts.get(vidx, 0) + 1
 
     last_race_results = [rr for rr, _ in rows if rr.race_id == race_ids[-1]]
-    vidx_to_pid = {rr.vehicle_index: rr.player_id for rr in last_race_results if rr.player_id}
+    vidx_to_pid = {rr.vehicle_index: rr.user_id for rr in last_race_results if rr.user_id}
     for vidx, cnt in overtake_counts.items():
         pid = vidx_to_pid.get(vidx)
         if pid and pid in players:

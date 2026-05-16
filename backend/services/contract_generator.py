@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.db.base import get_database_url
-from backend.models.models import Player, Race, RaceResult, SeasonContract
+from backend.models.models import User, Race, RaceResult, SeasonContract
 
 
 def _groq_api_key() -> str:
@@ -83,17 +83,17 @@ async def generate_contracts(season_id: int) -> list[dict]:
 
             by_player: dict[int, list[RaceResult]] = {}
             for result in all_results:
-                if result.player_id is None:
+                if result.user_id is None:
                     continue
-                by_player.setdefault(result.player_id, []).append(result)
+                by_player.setdefault(result.user_id, []).append(result)
 
             contracts_result = await db.execute(
                 select(SeasonContract).where(SeasonContract.season_id == season_id)
             )
-            current_contracts = {contract.player_id: contract for contract in contracts_result.scalars().all()}
+            current_contracts = {contract.user_id: contract for contract in contracts_result.scalars().all()}
 
             for player_id, results in by_player.items():
-                player = await db.get(Player, player_id)
+                player = await db.get(User, player_id)
                 if not player:
                     continue
 
@@ -266,7 +266,7 @@ async def apply_contract(player_id: int, new_team_id: int, new_season_id: int) -
             old_result = await db.execute(
                 select(SeasonContract).where(
                     SeasonContract.season_id == new_season_id,
-                    SeasonContract.player_id == player_id,
+                    SeasonContract.user_id == player_id,
                 )
             )
             old_contract = old_result.scalars().first()
@@ -276,7 +276,7 @@ async def apply_contract(player_id: int, new_team_id: int, new_season_id: int) -
             db.add(
                 SeasonContract(
                     season_id=new_season_id,
-                    player_id=player_id,
+                    user_id=player_id,
                     driver_id=driver_id,
                     driver_name=driver_info["name"],
                     team_id=new_team_id,

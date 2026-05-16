@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.db import base as db_base
 from backend.db.base import configure_database
-from backend.models.models import WebUser
+from backend.models.models import User
 from backend.services.auth_dependencies import get_current_user
 from backend.routers import (
     achievements,
@@ -154,7 +154,7 @@ def create_app(config: BackendAppConfig | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/api/engineer/ask")
-    async def engineer_ask(request_data: dict, _: WebUser = Depends(get_current_user)):
+    async def engineer_ask(request_data: dict, _: User = Depends(get_current_user)):
         """Proxy to Groq API for AI race engineer (used by launcher).
 
         Auth: requires a valid Bearer JWT. The launcher gets one after the

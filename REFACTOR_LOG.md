@@ -472,3 +472,59 @@ Last existing: `0012_add_indexes.py`. New migrations:
 - `0016_drop_legacy_user_columns.py` (PR 2.5)
 - `0017_drop_legacy_tables.py` (PR 2.5)
 - `0018_cleanup_users_tracking.py` (PR 2.5, optional)
+
+---
+
+## Sprint 2 / PR 2.5: Drop legacy tables (date: 2026-05-16)
+
+Closes Sprint 2 — identity unification end-to-end. The dual-write window
+opened in PR 2.1 is over; `users` is now the single source of truth.
+
+### Migrations shipped
+- `0016_drop_legacy_fk_columns.py` — drops every `web_user_id` / `player_id` /
+  `creator_id` / `granted_by` / `applied_by` on dependent tables (12 tables),
+  plus the 14 sync triggers + functions added in 0015. Also drops the dead
+  `races.host_player_id` column.
+- `0017_drop_legacy_tables.py` — drops the dual-write trigger + function from
+  0014, then `DROP TABLE web_users / players / season_moderators CASCADE`.
+
+`users.legacy_web_user_id` and `users.legacy_player_id` survive as audit
+columns; a future cosmetic migration will drop them.
+
+### Code refactor
+- ORM models (`backend/models/models.py`): removed `Player`, `WebUser`,
+  `SeasonModerator` classes and the `User` back-compat properties
+  (`web_user_id`, `player_id`, `picture`). FK columns renamed to point at
+  `users.id` directly.
+- Auth dependencies (`backend/services/auth_dependencies.py`): JWT subject is
+  now `users.id`. Lookups fall back to `legacy_web_user_id` so JWTs minted
+  before PR 2.5 keep working until the next cosmetic drop.
+- Routers and services updated to use `user_id` columns everywhere: lobby,
+  practice, players_admin, contracts, stewards, seasons, analytics, players,
+  achievements, telemetry, admin, races; services player_mapper,
+  contract_generator, ai_engineer, fun_stats, achievement_engine, glicko2,
+  standings_service.
+- `/api/web/link-player` deprecated → returns 410 Gone (Pydantic body and
+  auth dependency still validate, so unauth callers see 401 first).
+- Tests: 5 of the PR 2.1 schema regression tests skipped at collection time
+  (`@pytest.mark.skip` — they probed `web_users`/`players` and the
+  dual-write triggers that no longer exist). Three integration helpers
+  (`_insert_player`) refactored to add a `User` row directly. Lobby
+  contract harness updated to use `creator_user_id`.
+
+### Verification
+- Migrations applied cleanly on prod DB (no manual SQL).
+- Backend container restarted clean; `/health`, `/api/players`,
+  `/api/standings/1`, `/api/seasons`, `/api/users/by_telegram/...` all 200.
+- Bot restarted, polling resumed for `@wkhrs171819Bot`.
+- Frontend `/`, `/season/1/standings`, `/me` (redirects to login) all 200.
+- Test suite: **61 passed, 5 skipped** (the historic PR 2.1 schema tests).
+
+### Notes
+- 48h observation window between PR 2.4 and PR 2.5 was waived at the
+  operator's request — single-user deployment, full pg_dump on hand
+  (`backups/pre-sprint-2-final-20260516-152417.pgc`, 115 KB).
+- Existing NextAuth JWTs continue to authenticate via the legacy_web_user_id
+  fallback in `_resolve_user_from_token`. Launcher JWTs minted with `user.id`
+  also work. Old launcher builds that POST `web_user_id` in the debrief
+  endpoint body keep working — that field is accepted as an alias.

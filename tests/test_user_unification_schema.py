@@ -1,25 +1,26 @@
 """Sprint 2 / PR 2.1 — schema + backfill + dual-write trigger tests.
 
-These exercise the migration's contract:
-  1. `users` table is populated correctly by the three backfill branches.
-  2. Tracking columns (`legacy_*_id`) carry the right ids and uniqueness holds.
-  3. Conflict resolution (Player wins on name / avatar_url / steam_id64) lands
-     in the expected columns.
-  4. The dual-write triggers fire on INSERT/UPDATE and keep `users` in sync —
-     including the tricky case where a player row is created first and the
-     web_user with that player_id is inserted later (or vice versa) without
-     blowing up on the unique(legacy_player_id) constraint.
+These exercised the migration's contract while `web_users` and `players`
+still existed alongside `users` and were kept in sync by triggers from
+migrations 0013/0014. **PR 2.5 dropped both legacy tables and the
+dual-write triggers** (migrations 0016/0017), so every test in this file
+is now historic — they reference SQL objects that no longer exist.
+
+The file is kept (rather than deleted) so the Sprint 2 spec checklist
+remains greppable; the entire class is skipped at collection time.
 """
 from __future__ import annotations
 
 import asyncio
 import uuid
 
+import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from tests.backend_integration_support import BackendIntegrationCase
 
 
+@pytest.mark.skip(reason="PR 2.5 dropped web_users/players and the dual-write triggers these tests probe.")
 class UserUnificationSchemaTests(BackendIntegrationCase):
     """Each test creates an isolated dataset inside the harness DB.
 

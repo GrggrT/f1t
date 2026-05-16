@@ -3,10 +3,10 @@ import os
 import hmac
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from backend.db.base import get_db
-from backend.models.models import User, WebUser
+from backend.models.models import User
 from backend.services.jwt_auth import get_user_id_from_token
 
 
@@ -14,27 +14,31 @@ def _agent_secret_token() -> str:
     return os.getenv("AGENT_SECRET_TOKEN", "")
 
 
+async def _resolve_user_from_token(uid: int, db: AsyncSession) -> User | None:
+    """Look up a User by users.id, with fallback to legacy_web_user_id.
+
+    New tokens (minted post-PR 2.5) carry `users.id` in `sub`. Older tokens
+    still in flight carry the legacy `web_users.id`. Both work until the
+    legacy_*_id columns are dropped in a future cosmetic migration.
+    """
+    return (await db.execute(
+        select(User).where(or_(User.id == uid, User.legacy_web_user_id == uid))
+    )).scalars().first()
+
+
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Extract and validate current user from JWT Bearer token. Raises 401 if invalid.
-
-    Sprint 2 / PR 2.2: returns the unified `User` (was `WebUser`). JWT `sub`
-    still refers to the legacy `web_users.id`, so we look up via
-    `User.legacy_web_user_id`.
-    """
+    """Extract and validate current user from JWT Bearer token. Raises 401 if invalid."""
     auth = request.headers.get("Authorization", "")
     token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
 
-    web_user_id = get_user_id_from_token(token)
-    if not web_user_id:
+    uid = get_user_id_from_token(token)
+    if not uid:
         raise HTTPException(401, "Authentication required")
 
-    user = (await db.execute(
-        select(User).where(User.legacy_web_user_id == web_user_id)
-    )).scalars().first()
-
+    user = await _resolve_user_from_token(uid, db)
     if not user:
         raise HTTPException(401, "User not found")
     return user
@@ -48,14 +52,11 @@ async def get_current_user_optional(
     auth = request.headers.get("Authorization", "")
     token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
 
-    web_user_id = get_user_id_from_token(token)
-    if not web_user_id:
+    uid = get_user_id_from_token(token)
+    if not uid:
         return None
 
-    user = (await db.execute(
-        select(User).where(User.legacy_web_user_id == web_user_id)
-    )).scalars().first()
-    return user
+    return await _resolve_user_from_token(uid, db)
 
 
 def get_current_user_id(request: Request) -> int:
@@ -68,7 +69,7 @@ def get_current_user_id(request: Request) -> int:
     return uid
 
 
-def require_system_admin(user: WebUser) -> WebUser:
+def require_system_admin(user: User) -> User:
     """Check that user is a system admin. Raises 403 if not."""
     if not user.is_system_admin:
         raise HTTPException(403, "System admin access required")

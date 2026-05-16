@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from backend.db.base import get_db
-from backend.models.models import WebUser
+from backend.models.models import User
 from backend.services.auth_dependencies import get_current_user
 from backend.services.auth_helpers import require_season_moderator
 from backend.services.contract_generator import generate_contracts, apply_contract
@@ -67,12 +67,12 @@ class AcceptRequest(BaseModel):
 @router.post("/accept")
 async def accept_contract(
     req: AcceptRequest,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """Authenticated, ownership-checked: a user can only accept on behalf of
-    the player profile linked to their WebUser. System admins bypass."""
-    if not user.is_system_admin and user.player_id != req.player_id:
-        raise HTTPException(403, "You can only accept contracts for your own player profile")
+    their own User row. System admins bypass."""
+    if not user.is_system_admin and user.id != req.player_id:
+        raise HTTPException(403, "You can only accept contracts for your own profile")
     result = await apply_contract(req.player_id, req.team_id, req.new_season_id)
     if not result.get("ok"):
         raise HTTPException(400, result.get("error", "Failed"))

@@ -29,7 +29,7 @@ async def get_standings(season_id: int, db: AsyncSession = Depends(get_db)):
             "team_id":      s.team_id,
             "team_name":    s.team_name,
             "team_color":   get_team_color(s.team_id),
-            "player_id":    s.player_id,
+            "player_id":    s.user_id,
             "is_human":     s.is_human,
             "total_points": s.total_points,
             "wins":         s.wins,

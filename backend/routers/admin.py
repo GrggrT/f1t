@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from typing import List
 
 from backend.db.base import get_db
-from backend.models.models import Season, WebUser
+from backend.models.models import Season, User
 from backend.services.auth_dependencies import get_current_user, require_system_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -57,7 +57,7 @@ class SeasonCreate(BaseModel):
 
 
 @router.post("/seasons")
-async def create_season(req: SeasonCreate, db: AsyncSession = Depends(get_db), user: WebUser = Depends(get_current_user)):
+async def create_season(req: SeasonCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     require_system_admin(user)
     season = Season(
         name=req.name,
@@ -108,7 +108,7 @@ async def update_season_calendar(
     season_id: int,
     entries: List[CalendarEntry],
     db: AsyncSession = Depends(get_db),
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """Обновить (перезаписать) календарь сезона."""
     require_system_admin(user)

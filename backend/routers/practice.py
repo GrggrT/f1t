@@ -1,22 +1,14 @@
 """Practice/personal telemetry sessions — data collected by launcher in personal mode."""
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func, text
+from sqlalchemy import text
 
 from backend.db.base import get_db
-from backend.services.jwt_auth import get_user_id_from_token
+from backend.models.models import User
+from backend.services.auth_dependencies import get_current_user
 
 router = APIRouter(prefix="/api/practice", tags=["practice"])
-
-
-def _get_user_id(request: Request) -> int:
-    auth = request.headers.get("Authorization", "")
-    token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
-    uid = get_user_id_from_token(token)
-    if not uid:
-        raise HTTPException(401, "Auth required")
-    return uid
 
 
 class CreateSessionReq(BaseModel):
@@ -40,24 +32,21 @@ class AddLapsBatchReq(BaseModel):
 
 
 @router.post("/sessions")
-async def create_session(req: CreateSessionReq, request: Request, db: AsyncSession = Depends(get_db)):
-    user_id = _get_user_id(request)
+async def create_session(req: CreateSessionReq, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(text(
-        "INSERT INTO practice_sessions (web_user_id, track_id, track_name, session_type) "
+        "INSERT INTO practice_sessions (user_id, track_id, track_name, session_type) "
         "VALUES (:uid, :tid, :tn, :st) RETURNING id, created_at"
-    ), {"uid": user_id, "tid": req.track_id, "tn": req.track_name, "st": req.session_type})
+    ), {"uid": user.id, "tid": req.track_id, "tn": req.track_name, "st": req.session_type})
     row = result.fetchone()
     await db.commit()
     return {"id": row[0], "created_at": str(row[1])}
 
 
 @router.post("/sessions/{session_id}/laps")
-async def add_laps(session_id: int, req: AddLapsBatchReq, request: Request, db: AsyncSession = Depends(get_db)):
-    user_id = _get_user_id(request)
-    # Verify ownership
+async def add_laps(session_id: int, req: AddLapsBatchReq, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     check = await db.execute(text(
-        "SELECT id FROM practice_sessions WHERE id = :sid AND web_user_id = :uid"
-    ), {"sid": session_id, "uid": user_id})
+        "SELECT id FROM practice_sessions WHERE id = :sid AND user_id = :uid"
+    ), {"sid": session_id, "uid": user.id})
     if not check.fetchone():
         raise HTTPException(404, "Session not found")
 
@@ -71,7 +60,6 @@ async def add_laps(session_id: int, req: AddLapsBatchReq, request: Request, db: 
             "tc": lap.tyre_compound, "v": lap.valid,
         })
 
-    # Update session stats
     await db.execute(text(
         "UPDATE practice_sessions SET total_laps = (SELECT COUNT(*) FROM practice_laps WHERE session_id = :sid), "
         "best_lap_ms = (SELECT MIN(lap_time_ms) FROM practice_laps WHERE session_id = :sid AND valid = true) "
@@ -82,22 +70,20 @@ async def add_laps(session_id: int, req: AddLapsBatchReq, request: Request, db: 
 
 
 @router.post("/sessions/{session_id}/end")
-async def end_session(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    user_id = _get_user_id(request)
+async def end_session(session_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await db.execute(text(
-        "UPDATE practice_sessions SET ended_at = NOW() WHERE id = :sid AND web_user_id = :uid"
-    ), {"sid": session_id, "uid": user_id})
+        "UPDATE practice_sessions SET ended_at = NOW() WHERE id = :sid AND user_id = :uid"
+    ), {"sid": session_id, "uid": user.id})
     await db.commit()
     return {"ok": True}
 
 
 @router.get("/sessions")
-async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
-    user_id = _get_user_id(request)
+async def list_sessions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(text(
         "SELECT id, track_id, track_name, session_type, total_laps, best_lap_ms, created_at, ended_at "
-        "FROM practice_sessions WHERE web_user_id = :uid ORDER BY created_at DESC LIMIT 50"
-    ), {"uid": user_id})
+        "FROM practice_sessions WHERE user_id = :uid ORDER BY created_at DESC LIMIT 50"
+    ), {"uid": user.id})
     rows = result.fetchall()
     return [
         {
@@ -110,12 +96,11 @@ async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/sessions/{session_id}")
-async def get_session(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    user_id = _get_user_id(request)
+async def get_session(session_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     sess = await db.execute(text(
         "SELECT id, track_id, track_name, session_type, total_laps, best_lap_ms, created_at, ended_at "
-        "FROM practice_sessions WHERE id = :sid AND web_user_id = :uid"
-    ), {"sid": session_id, "uid": user_id})
+        "FROM practice_sessions WHERE id = :sid AND user_id = :uid"
+    ), {"sid": session_id, "uid": user.id})
     row = sess.fetchone()
     if not row:
         raise HTTPException(404, "Session not found")

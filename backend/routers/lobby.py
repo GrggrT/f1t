@@ -28,7 +28,7 @@ from backend.db.base import get_db
 from backend.services.auth_dependencies import get_current_user, get_current_user_optional
 from backend.services.auth_helpers import require_lobby_member
 from backend.models.models import (
-    Lobby, LobbyMember, Season, User, WebUser, Player,
+    Lobby, LobbyMember, Season, User,
     Race, RaceResult, ChampionshipStanding,
 )
 
@@ -48,14 +48,14 @@ async def _get_lobby_or_404(lobby_id: int, db: AsyncSession) -> Lobby:
     return lobby
 
 
-async def _get_member_role(lobby_id: int, web_user_id: int | None, db: AsyncSession) -> str:
+async def _get_member_role(lobby_id: int, user_id: int | None, db: AsyncSession) -> str:
     """Returns 'admin' | 'moderator' | 'member' | 'guest'."""
-    if not web_user_id:
+    if not user_id:
         return "guest"
     res = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == web_user_id,
+            LobbyMember.user_id == user_id,
         )
     )
     member = res.scalars().first()
@@ -76,12 +76,12 @@ class CreateLobbyReq(BaseModel):
 
 
 @router.post("")
-async def create_lobby(req: CreateLobbyReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def create_lobby(req: CreateLobbyReq, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Create a new lobby. Creator becomes admin member."""
     lobby = Lobby(
         name=req.name,
         description=req.description,
-        creator_id=user.web_user_id,
+        creator_user_id=user.id,
         invite_code=secrets.token_urlsafe(8),
     )
     db.add(lobby)
@@ -89,7 +89,7 @@ async def create_lobby(req: CreateLobbyReq, user: WebUser = Depends(get_current_
 
     db.add(LobbyMember(
         lobby_id=lobby.id,
-        web_user_id=user.web_user_id,
+        user_id=user.id,
         role="admin",
     ))
     await db.commit()
@@ -105,14 +105,18 @@ async def create_lobby(req: CreateLobbyReq, user: WebUser = Depends(get_current_
 
 
 @router.get("")
-async def list_lobbies(web_user_id: int | None = None, user: WebUser | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
-    """List lobbies. If authenticated — their lobbies, else all."""
-    effective_user_id = user.web_user_id if user else web_user_id
+async def list_lobbies(web_user_id: int | None = None, user: User | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
+    """List lobbies. If authenticated — their lobbies, else all.
+
+    The legacy `web_user_id` query param is accepted for back-compat with old
+    frontend builds; it is interpreted as the unified `user_id`.
+    """
+    effective_user_id = user.id if user else web_user_id
     if effective_user_id:
         res = await db.execute(
             select(Lobby, LobbyMember.role)
             .join(LobbyMember, LobbyMember.lobby_id == Lobby.id)
-            .where(LobbyMember.web_user_id == effective_user_id)
+            .where(LobbyMember.user_id == effective_user_id)
             .order_by(Lobby.created_at.desc())
         )
         rows = res.all()
@@ -159,14 +163,14 @@ async def list_lobbies(web_user_id: int | None = None, user: WebUser | None = De
 
 
 @router.get("/host-seasons")
-async def list_host_seasons(user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_host_seasons(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Flatten lobby seasons the current user can realistically target from launcher host mode."""
     res = await db.execute(
         select(Season, Lobby, LobbyMember.role)
         .join(Lobby, Season.lobby_id == Lobby.id)
         .join(
             LobbyMember,
-            (LobbyMember.lobby_id == Lobby.id) & (LobbyMember.web_user_id == user.web_user_id),
+            (LobbyMember.lobby_id == Lobby.id) & (LobbyMember.user_id == user.id),
         )
         .order_by(Season.created_at.desc(), Season.id.desc())
     )
@@ -202,13 +206,13 @@ async def list_host_seasons(user: WebUser = Depends(get_current_user), db: Async
 
 
 @router.get("/{lobby_id}")
-async def get_lobby(lobby_id: int, web_user_id: int | None = None, user: WebUser | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
+async def get_lobby(lobby_id: int, web_user_id: int | None = None, user: User | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
     """Lobby detail + current user's role."""
     lobby = await _get_lobby_or_404(lobby_id, db)
-    effective_user_id = user.web_user_id if user else web_user_id
+    effective_user_id = user.id if user else web_user_id
     role = await _get_member_role(lobby_id, effective_user_id, db)
 
-    creator = await db.get(WebUser, lobby.creator_id)
+    creator = await db.get(User, lobby.creator_user_id)
     member_cnt = await db.execute(
         select(func.count()).select_from(LobbyMember).where(LobbyMember.lobby_id == lobby_id)
     )
@@ -236,7 +240,7 @@ async def get_lobby(lobby_id: int, web_user_id: int | None = None, user: WebUser
         "name":         lobby.name,
         "description":  lobby.description,
         "avatar_url":   lobby.avatar_url,
-        "creator_id":   lobby.creator_id,
+        "creator_id":   lobby.creator_user_id,
         "creator_name": creator.name if creator else None,
         "invite_code":  lobby.invite_code if role in ("admin", "moderator") else None,
         "members_count": member_cnt.scalar() or 0,
@@ -256,7 +260,7 @@ class JoinReq(BaseModel):
 
 
 @router.post("/{lobby_id}/join")
-async def join_lobby(lobby_id: int, req: JoinReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def join_lobby(lobby_id: int, req: JoinReq, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Join lobby using invite code."""
     lobby = await _get_lobby_or_404(lobby_id, db)
     if lobby.invite_code != req.invite_code:
@@ -265,19 +269,19 @@ async def join_lobby(lobby_id: int, req: JoinReq, user: WebUser = Depends(get_cu
     existing = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == user.web_user_id,
+            LobbyMember.user_id == user.id,
         )
     )
     if existing.scalars().first():
         return {"ok": True, "message": "Already a member"}
 
-    db.add(LobbyMember(lobby_id=lobby_id, web_user_id=user.web_user_id, role="member"))
+    db.add(LobbyMember(lobby_id=lobby_id, user_id=user.id, role="member"))
     await db.commit()
     return {"ok": True, "message": f"Joined '{lobby.name}'"}
 
 
 @router.post("/join-by-code")
-async def join_by_code(req: JoinReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def join_by_code(req: JoinReq, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Join lobby using only invite code (no lobby_id needed)."""
     res = await db.execute(
         select(Lobby).where(Lobby.invite_code == req.invite_code)
@@ -289,28 +293,28 @@ async def join_by_code(req: JoinReq, user: WebUser = Depends(get_current_user), 
     existing = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby.id,
-            LobbyMember.web_user_id == user.web_user_id,
+            LobbyMember.user_id == user.id,
         )
     )
     if existing.scalars().first():
         return {"ok": True, "lobby_id": lobby.id, "message": "Already a member"}
 
-    db.add(LobbyMember(lobby_id=lobby.id, web_user_id=user.web_user_id, role="member"))
+    db.add(LobbyMember(lobby_id=lobby.id, user_id=user.id, role="member"))
     await db.commit()
     return {"ok": True, "lobby_id": lobby.id, "message": f"Joined '{lobby.name}'"}
 
 
 @router.delete("/{lobby_id}/leave")
-async def leave_lobby(lobby_id: int, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def leave_lobby(lobby_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Leave lobby. Admin cannot leave (must transfer ownership first)."""
     lobby = await _get_lobby_or_404(lobby_id, db)
-    if lobby.creator_id == user.web_user_id:
+    if lobby.creator_user_id == user.id:
         raise HTTPException(400, "Admin cannot leave. Transfer ownership first.")
 
     res = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == user.web_user_id,
+            LobbyMember.user_id == user.id,
         )
     )
     member = res.scalars().first()
@@ -337,7 +341,8 @@ async def list_members(
     )
     return [
         {
-            "web_user_id": row.LobbyMember.web_user_id,
+            "user_id":     row.LobbyMember.user_id,
+            "web_user_id": row.LobbyMember.user_id,  # back-compat alias for older frontend
             "name":        row.uname,
             "picture":     row.upic,
             "role":        row.LobbyMember.role,
@@ -352,21 +357,21 @@ class RoleChangeReq(BaseModel):
 
 
 @router.patch("/{lobby_id}/members/{uid}/role")
-async def change_member_role(lobby_id: int, uid: int, req: RoleChangeReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    role = await _get_member_role(lobby_id, user.web_user_id, db)
+async def change_member_role(lobby_id: int, uid: int, req: RoleChangeReq, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    role = await _get_member_role(lobby_id, user.id, db)
     _require_role(role, "admin")
 
     if req.new_role not in ("moderator", "member"):
         raise HTTPException(400, "Role must be 'moderator' or 'member'")
 
     lobby = await db.get(Lobby, lobby_id)
-    if lobby.creator_id == uid:
+    if lobby.creator_user_id == uid:
         raise HTTPException(400, "Cannot change admin's role")
 
     res = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == uid,
+            LobbyMember.user_id == uid,
         )
     )
     member = res.scalars().first()
@@ -379,18 +384,18 @@ async def change_member_role(lobby_id: int, uid: int, req: RoleChangeReq, user: 
 
 
 @router.delete("/{lobby_id}/members/{uid}")
-async def kick_member(lobby_id: int, uid: int, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    role = await _get_member_role(lobby_id, user.web_user_id, db)
+async def kick_member(lobby_id: int, uid: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    role = await _get_member_role(lobby_id, user.id, db)
     _require_role(role, "moderator")
 
     lobby = await db.get(Lobby, lobby_id)
-    if lobby.creator_id == uid:
+    if lobby.creator_user_id == uid:
         raise HTTPException(400, "Cannot kick the lobby creator")
 
     res = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == uid,
+            LobbyMember.user_id == uid,
         )
     )
     member = res.scalars().first()
@@ -408,8 +413,8 @@ class LobbySettingsReq(BaseModel):
 
 
 @router.put("/{lobby_id}/settings")
-async def update_settings(lobby_id: int, req: LobbySettingsReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    role = await _get_member_role(lobby_id, user.web_user_id, db)
+async def update_settings(lobby_id: int, req: LobbySettingsReq, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    role = await _get_member_role(lobby_id, user.id, db)
     _require_role(role, "moderator")
     lobby = await _get_lobby_or_404(lobby_id, db)
     if req.name is not None:
@@ -421,8 +426,8 @@ async def update_settings(lobby_id: int, req: LobbySettingsReq, user: WebUser = 
 
 
 @router.post("/{lobby_id}/invite/reset")
-async def reset_invite_code(lobby_id: int, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    role = await _get_member_role(lobby_id, user.web_user_id, db)
+async def reset_invite_code(lobby_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    role = await _get_member_role(lobby_id, user.id, db)
     _require_role(role, "admin")
     lobby = await _get_lobby_or_404(lobby_id, db)
     lobby.invite_code = secrets.token_urlsafe(8)
@@ -437,9 +442,9 @@ class CreateSeasonReq(BaseModel):
 
 
 @router.post("/{lobby_id}/seasons")
-async def create_season(lobby_id: int, req: CreateSeasonReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def create_season(lobby_id: int, req: CreateSeasonReq, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Create a new season within this lobby."""
-    role = await _get_member_role(lobby_id, user.web_user_id, db)
+    role = await _get_member_role(lobby_id, user.id, db)
     _require_role(role, "moderator")
 
     season = Season(
@@ -447,7 +452,7 @@ async def create_season(lobby_id: int, req: CreateSeasonReq, user: WebUser = Dep
         status="active",
         calendar=[],
         points_system={},
-        creator_id=user.web_user_id,
+        creator_user_id=user.id,
         lobby_id=lobby_id,
     )
     db.add(season)
@@ -494,16 +499,12 @@ async def list_lobby_seasons(
 async def get_engineer_context(
     lobby_id:  int,
     season_id: int | None = None,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: object = Depends(require_lobby_member),
 ):
     """Get pilot context for AI engineer. Optional season_id to scope data."""
     await _get_lobby_or_404(lobby_id, db)
-    if not user.player_id:
-        raise HTTPException(400, "No linked player profile")
-
-    player = await db.get(Player, user.player_id)
 
     # Get seasons in this lobby
     lobby_seasons = await db.execute(
@@ -514,13 +515,13 @@ async def get_engineer_context(
         season_ids = [season_id]
 
     if not season_ids:
-        return {"player_name": player.name if player else user.name, "race_history": []}
+        return {"player_name": user.name, "race_history": []}
 
     # Standings
     standing_res = await db.execute(
         select(ChampionshipStanding).where(
             ChampionshipStanding.season_id.in_(season_ids),
-            ChampionshipStanding.player_id == user.player_id,
+            ChampionshipStanding.user_id == user.id,
         )
     )
     standing = standing_res.scalars().first()
@@ -530,7 +531,7 @@ async def get_engineer_context(
         select(RaceResult, Race.track_name, Race.round_number)
         .join(Race, RaceResult.race_id == Race.id)
         .where(
-            RaceResult.player_id == user.player_id,
+            RaceResult.user_id == user.id,
             Race.season_id.in_(season_ids),
         )
         .order_by(Race.round_number)
@@ -550,8 +551,8 @@ async def get_engineer_context(
     ]
 
     return {
-        "player_name":  player.name if player else user.name,
-        "player_id":    user.player_id,
+        "player_name":  user.name,
+        "player_id":    user.id,
         "lobby_id":     lobby_id,
         "position":     standing.position if standing else None,
         "total_points": standing.total_points if standing else 0,
@@ -573,16 +574,12 @@ class EngineerAskReq(BaseModel):
 async def ask_engineer(
     lobby_id: int,
     req: EngineerAskReq,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     _: object = Depends(require_lobby_member),
 ):
     """AI engineer: works with lobby's season data."""
     await _get_lobby_or_404(lobby_id, db)
-    if not user.player_id:
-        raise HTTPException(400, "No linked player profile")
-
-    player = await db.get(Player, user.player_id)
 
     # Get seasons in this lobby
     lobby_seasons = await db.execute(
@@ -597,7 +594,7 @@ async def ask_engineer(
         select(RaceResult, Race.track_name, Race.season_id)
         .join(Race, RaceResult.race_id == Race.id)
         .where(
-            RaceResult.player_id == user.player_id,
+            RaceResult.user_id == user.id,
             Race.season_id.in_(season_ids),
         )
         .order_by(Race.season_id, Race.round_number)
@@ -622,7 +619,7 @@ async def ask_engineer(
 
     lobby = await db.get(Lobby, lobby_id)
     context = (
-        f"Пилот: {player.name} | Лобби: {lobby.name}\n"
+        f"Пилот: {user.name} | Лобби: {lobby.name}\n"
         f"Гонок: {total_races} | Победы: {wins} | Подиумы: {podiums} | DNF: {dnfs}\n"
         f"Очки: {points} | Средняя позиция: {avg_pos:.1f}\n"
         f"Последние гонки: {' | '.join(race_lines)}"

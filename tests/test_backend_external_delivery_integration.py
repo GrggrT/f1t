@@ -16,19 +16,20 @@ def _steam_id64() -> str:
 
 class BackendExternalDeliveryIntegrationTests(BackendIntegrationCase):
     def _insert_player(self, name: str, steam_name: str, *, telegram_id: int | None = None) -> int:
+        """Post-PR 2.5: a 'player' is a User row with telegram/steam set."""
         async def create_player(session):
-            from backend.models.models import Player
+            from backend.models.models import User
 
-            player = Player(
+            user = User(
                 name=name,
                 steam_id64=_steam_id64(),
                 steam_names=[steam_name],
                 telegram_id=telegram_id,
             )
-            session.add(player)
+            session.add(user)
             await session.commit()
-            await session.refresh(player)
-            return player.id
+            await session.refresh(user)
+            return user.id
 
         return self.harness.db_call(create_player)
 

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from backend.db.base import get_db
-from backend.models.models import Season, Race, RaceResult, Player, ChampionshipStanding, WebUser
+from backend.models.models import Season, Race, RaceResult, ChampionshipStanding, User
 from backend.services.auth_dependencies import get_current_user
 
 router = APIRouter(prefix="/api/seasons", tags=["seasons"])
@@ -83,18 +83,17 @@ class AssistantRequest(BaseModel):
 async def personal_assistant(
     req: AssistantRequest,
     db: AsyncSession = Depends(get_db),
-    _: WebUser = Depends(get_current_user),
+    _: User = Depends(get_current_user),
 ):
     """Персональный AI-ассистент — анализирует общий перформанс пользователя по всем сезонам."""
-    # Собираем статистику по всем сезонам
-    player = await db.get(Player, req.player_id)
-    if not player:
+    user_row = await db.get(User, req.player_id)
+    if not user_row:
         raise HTTPException(404, "Player not found")
 
     standings_res = await db.execute(
         select(ChampionshipStanding, Season.name.label("season_name"))
         .join(Season, ChampionshipStanding.season_id == Season.id)
-        .where(ChampionshipStanding.player_id == req.player_id)
+        .where(ChampionshipStanding.user_id == req.player_id)
         .order_by(Season.id)
     )
     standings_rows = standings_res.all()
@@ -102,7 +101,7 @@ async def personal_assistant(
     results_res = await db.execute(
         select(RaceResult, Race.track_name, Race.season_id)
         .join(Race, RaceResult.race_id == Race.id)
-        .where(RaceResult.player_id == req.player_id)
+        .where(RaceResult.user_id == req.player_id)
         .order_by(Race.raced_at)
     )
     results_rows = results_res.all()
@@ -126,7 +125,7 @@ async def personal_assistant(
         )
 
     context = (
-        f"Пилот: {player.name}\n"
+        f"Пилот: {user_row.name}\n"
         f"Всего гонок: {total_races}\n"
         f"Победы: {total_wins}, Подиумы: {total_podiums}, DNF: {total_dnfs}\n"
         f"Всего очков: {total_pts:.0f}\n"
