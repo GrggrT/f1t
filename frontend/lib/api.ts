@@ -86,6 +86,39 @@ export interface CalendarEntry {
   raced_at:   string | null
 }
 
+// Sprint 2 / PR 2.4 — unified identity. After PR 2.5 this becomes the only
+// user-shaped type; for now `WebMe` is kept as an alias so legacy pages can
+// import either name without breaking. `legacy_player_id` and
+// `legacy_web_user_id` carry the old IDs for any code that still needs to
+// JOIN against pre-migration tables.
+export interface User {
+  id:                  number
+  email:               string | null
+  name:                string
+  avatar_url:          string | null
+  telegram_id:         number | null
+  steam_id64:          string | null
+  steam_names:         string[] | null
+  is_system_admin:     boolean
+  // Back-compat fields that mirror legacy WebMe shape — populated server-side
+  // until PR 2.5 drops them. Treat `player_id` as "is this user linked to a
+  // bot/race-data Player profile?".
+  player_id:           number | null
+  picture:             string | null
+  player?: {
+    id:           number
+    name:         string
+    steam_url:    string | null
+    telegram_id:  number | null
+    steam_names:  string[]
+    avatar_url:   string | null
+  }
+  legacy_player_id?:   number | null
+  legacy_web_user_id?: number | null
+}
+
+export type WebMe = User
+
 export interface PlayerStats {
   player_id:    number
   name:         string

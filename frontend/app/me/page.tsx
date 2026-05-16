@@ -9,23 +9,10 @@ import { apiFetch } from "@/lib/api-client"
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? ""
 
-interface WebMe {
-  id: number
-  name: string
-  email: string | null
-  picture: string | null
-  steam_id64: string | null
-  player_id: number | null
-  is_system_admin: boolean
-  player?: {
-    id: number
-    name: string
-    steam_url: string | null
-    telegram_id: number | null
-    steam_names: string[]
-    avatar_url: string | null
-  }
-}
+// Sprint 2 / PR 2.4 — local alias keeps the diff small; the canonical type
+// now lives in lib/api.ts as `User` (WebMe is exported there as a back-compat
+// alias).
+import type { User as WebMe } from "@/lib/api"
 
 interface PlayerStats {
   total_points: number
@@ -77,11 +64,6 @@ interface LobbyItem {
   your_role?: string
 }
 
-interface PlayerOption {
-  id: number
-  name: string
-}
-
 function ratingTier(rating: number) {
   if (rating >= 2000) return "Грандмастер"
   if (rating >= 1800) return "Мастер"
@@ -98,10 +80,6 @@ export default function MePage() {
   const [me, setMe] = useState<WebMe | null>(null)
   const [stats, setStats] = useState<PlayerStats | null>(null)
   const [profile, setProfile] = useState<FullProfile | null>(null)
-  const [players, setPlayers] = useState<PlayerOption[]>([])
-  const [linkId, setLinkId] = useState("")
-  const [linking, setLinking] = useState(false)
-  const [linkMessage, setLinkMessage] = useState<string | null>(null)
   const [question, setQuestion] = useState("")
   const [assistantAnswer, setAssistantAnswer] = useState<string | null>(null)
   const [assistantLoading, setAssistantLoading] = useState(false)
@@ -141,10 +119,9 @@ export default function MePage() {
         }
       })
 
-    fetch(`${API}/api/players`)
-      .then((response) => (response.ok ? response.json() : []))
-      .then((payload) => setPlayers(payload))
-      .catch(() => {})
+    // Sprint 2 / PR 2.4 — removed the /api/players prefetch that fed the
+    // "привязать игрока" picker. Linking will be reintroduced via the
+    // Telegram bot deep-link in Sprint 6 (UX rebuild).
 
     apiFetch(`/api/lobby?web_user_id=${userId}`)
       .then((response) => (response.ok ? response.json() : []))
@@ -178,30 +155,6 @@ export default function MePage() {
         setProfile(await profileResponse.json())
       }
     }
-  }
-
-  async function linkProfile() {
-    if (!me || !linkId) {
-      return
-    }
-
-    setLinking(true)
-    setLinkMessage(null)
-
-    const response = await apiFetch(`/api/web/link-player`, {
-      method: "POST",
-      body: JSON.stringify({ user_id: me.id, player_id: Number(linkId) }),
-    })
-    const payload = await response.json()
-
-    if (response.ok) {
-      setLinkMessage(`Профиль связан с ${payload.player_name}.`)
-      await refreshAccount()
-    } else {
-      setLinkMessage(payload.detail ?? "Не удалось привязать профиль.")
-    }
-
-    setLinking(false)
   }
 
   async function askAssistant() {
@@ -339,44 +292,20 @@ export default function MePage() {
         </div>
       </section>
 
+      {/* Sprint 2 / PR 2.4 — manual "привязать игрока" picker удалён. После
+          unification WebUser+Player → User линковка не нужна руками: бот
+          /register создаёт User, Google-login дополняет тот же User по
+          email/telegram_id. Если у юзера ещё нет телеметрического профиля —
+          мягкий хинт без блокирующего UI. Полный self-link flow придёт в
+          Sprint 6 (UX rebuild). */}
       {!me.player_id ? (
-        <section className="surface-panel p-6">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div>
-              <p className="eyebrow">Привязать профиль игрока</p>
-              <h2 className="mt-2 section-title">Свяжите веб-аккаунт с игровой идентичностью в лиге.</h2>
-              <p className="mt-4 text-sm leading-7 text-muted">
-                Это откроет историю сезонов, телеметрический анализ, контекст AI-инженера и вашу публичную страницу игрока.
-              </p>
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <select
-                  value={linkId}
-                  onChange={(event) => setLinkId(event.target.value)}
-                  className="h-12 flex-1 rounded-[12px] border border-border bg-[#0f141a] px-4 text-sm text-text outline-none transition-colors focus:border-borderStrong"
-                >
-                  <option value="">Выберите профиль игрока</option>
-                  {players.map((player) => (
-                    <option key={player.id} value={player.id}>
-                      #{player.id} - {player.name}
-                    </option>
-                  ))}
-                </select>
-                <button onClick={linkProfile} disabled={!linkId || linking} className="ui-button-primary">
-                  {linking ? "Привязываем..." : "Привязать профиль"}
-                </button>
-              </div>
-              {linkMessage ? <p className="mt-3 text-sm text-muted">{linkMessage}</p> : null}
-            </div>
-
-            <div className="surface-panel-muted p-5">
-              <p className="eyebrow">Зачем это нужно</p>
-              <ul className="mt-4 space-y-3 text-sm leading-6 text-muted">
-                <li>Публичная идентичность игрока становится каноничной для сезонов и гонок.</li>
-                <li>Инструменты участника смогут корректно привязывать телеметрию и AI-анализ.</li>
-                <li>Продуктовая оболочка остается дисциплинированной между объектами аккаунта и соревнования.</li>
-              </ul>
-            </div>
-          </div>
+        <section className="surface-panel-muted p-6">
+          <p className="eyebrow">Подключите телеметрию</p>
+          <h2 className="mt-2 section-title">Аккаунт пока не привязан к гоночному профилю.</h2>
+          <p className="mt-4 text-sm leading-7 text-muted">
+            Откройте Telegram-бот <a href="https://t.me/wkhrs171819Bot" className="text-info hover:text-text">@wkhrs171819Bot</a> и пройдите{" "}
+            <code className="rounded bg-[#0f141a] px-2 py-1 text-xs">/register</code> — после первой гонки сезонная статистика и AI-инженер появятся в этом кабинете автоматически.
+          </p>
         </section>
       ) : null}
 
