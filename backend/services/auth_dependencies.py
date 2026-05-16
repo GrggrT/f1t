@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.db.base import get_db
-from backend.models.models import WebUser
+from backend.models.models import User, WebUser
 from backend.services.jwt_auth import get_user_id_from_token
 
 
@@ -17,17 +17,22 @@ def _agent_secret_token() -> str:
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> WebUser:
-    """Extract and validate current user from JWT Bearer token. Raises 401 if invalid."""
+) -> User:
+    """Extract and validate current user from JWT Bearer token. Raises 401 if invalid.
+
+    Sprint 2 / PR 2.2: returns the unified `User` (was `WebUser`). JWT `sub`
+    still refers to the legacy `web_users.id`, so we look up via
+    `User.legacy_web_user_id`.
+    """
     auth = request.headers.get("Authorization", "")
     token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
 
-    user_id = get_user_id_from_token(token)
-    if not user_id:
+    web_user_id = get_user_id_from_token(token)
+    if not web_user_id:
         raise HTTPException(401, "Authentication required")
 
     user = (await db.execute(
-        select(WebUser).where(WebUser.id == user_id)
+        select(User).where(User.legacy_web_user_id == web_user_id)
     )).scalars().first()
 
     if not user:
@@ -38,17 +43,17 @@ async def get_current_user(
 async def get_current_user_optional(
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> WebUser | None:
+) -> User | None:
     """Same as get_current_user but returns None instead of raising 401."""
     auth = request.headers.get("Authorization", "")
     token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
 
-    user_id = get_user_id_from_token(token)
-    if not user_id:
+    web_user_id = get_user_id_from_token(token)
+    if not web_user_id:
         return None
 
     user = (await db.execute(
-        select(WebUser).where(WebUser.id == user_id)
+        select(User).where(User.legacy_web_user_id == web_user_id)
     )).scalars().first()
     return user
 

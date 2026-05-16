@@ -357,8 +357,10 @@ async def web_me(user_id: int, request: Request, db: AsyncSession = Depends(get_
     from backend.services.auth_dependencies import get_current_user_optional
     auth_user = await get_current_user_optional(request, db)
 
-    # If authenticated, allow access to own profile; system admin can view any
-    if auth_user and auth_user.id != user_id and not auth_user.is_system_admin:
+    # If authenticated, allow access to own profile; system admin can view any.
+    # auth_user is a `User` (Sprint 2) so compare via `.web_user_id` against
+    # the legacy `web_users.id` value carried in the URL.
+    if auth_user and auth_user.web_user_id != user_id and not auth_user.is_system_admin:
         raise HTTPException(403, "Access denied")
 
     user = (await db.execute(
@@ -370,7 +372,7 @@ async def web_me(user_id: int, request: Request, db: AsyncSession = Depends(get_
     data = _to_dict(user)
 
     # Hide sensitive fields from non-owner requests
-    if not auth_user or auth_user.id != user_id:
+    if not auth_user or auth_user.web_user_id != user_id:
         data.pop("is_system_admin", None)
 
     if user.player_id:
@@ -402,9 +404,14 @@ async def link_player(
 ):
     """Bind the caller's WebUser to a Player row.
 
-    Ownership check: the dependency injects the WebUser from the Bearer
-    token, and we only ever mutate that user's player_id — so there is
+    Ownership check: the dependency injects the User from the Bearer
+    token, and we only ever mutate that user's web_users.player_id —
     no way to link another user's account.
+
+    Sprint 2 / PR 2.2: writes go to the legacy `web_users.player_id`
+    column directly; the trigger from 0014 mirrors the link into
+    `users.legacy_player_id` (and `users.user_id`-flavoured FKs on
+    dependent tables) automatically.
     """
     player = (await db.execute(
         select(Player).where(Player.id == req.player_id)
@@ -412,9 +419,12 @@ async def link_player(
     if not player:
         raise HTTPException(404, "Игрок не найден")
 
-    user.player_id = req.player_id
-    if user.picture and not player.avatar_url:
-        player.avatar_url = user.picture
+    web_user = await db.get(WebUser, user.web_user_id)
+    if web_user is None:
+        raise HTTPException(404, "Web user record missing")
+    web_user.player_id = req.player_id
+    if web_user.picture and not player.avatar_url:
+        player.avatar_url = web_user.picture
     await db.commit()
     return {"ok": True, "player_name": player.name}
 

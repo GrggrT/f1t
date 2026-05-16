@@ -28,7 +28,7 @@ from backend.db.base import get_db
 from backend.services.auth_dependencies import get_current_user, get_current_user_optional
 from backend.services.auth_helpers import require_lobby_member
 from backend.models.models import (
-    Lobby, LobbyMember, Season, WebUser, Player,
+    Lobby, LobbyMember, Season, User, WebUser, Player,
     Race, RaceResult, ChampionshipStanding,
 )
 
@@ -81,7 +81,7 @@ async def create_lobby(req: CreateLobbyReq, user: WebUser = Depends(get_current_
     lobby = Lobby(
         name=req.name,
         description=req.description,
-        creator_id=user.id,
+        creator_id=user.web_user_id,
         invite_code=secrets.token_urlsafe(8),
     )
     db.add(lobby)
@@ -89,7 +89,7 @@ async def create_lobby(req: CreateLobbyReq, user: WebUser = Depends(get_current_
 
     db.add(LobbyMember(
         lobby_id=lobby.id,
-        web_user_id=user.id,
+        web_user_id=user.web_user_id,
         role="admin",
     ))
     await db.commit()
@@ -107,7 +107,7 @@ async def create_lobby(req: CreateLobbyReq, user: WebUser = Depends(get_current_
 @router.get("")
 async def list_lobbies(web_user_id: int | None = None, user: WebUser | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
     """List lobbies. If authenticated — their lobbies, else all."""
-    effective_user_id = user.id if user else web_user_id
+    effective_user_id = user.web_user_id if user else web_user_id
     if effective_user_id:
         res = await db.execute(
             select(Lobby, LobbyMember.role)
@@ -166,7 +166,7 @@ async def list_host_seasons(user: WebUser = Depends(get_current_user), db: Async
         .join(Lobby, Season.lobby_id == Lobby.id)
         .join(
             LobbyMember,
-            (LobbyMember.lobby_id == Lobby.id) & (LobbyMember.web_user_id == user.id),
+            (LobbyMember.lobby_id == Lobby.id) & (LobbyMember.web_user_id == user.web_user_id),
         )
         .order_by(Season.created_at.desc(), Season.id.desc())
     )
@@ -205,7 +205,7 @@ async def list_host_seasons(user: WebUser = Depends(get_current_user), db: Async
 async def get_lobby(lobby_id: int, web_user_id: int | None = None, user: WebUser | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
     """Lobby detail + current user's role."""
     lobby = await _get_lobby_or_404(lobby_id, db)
-    effective_user_id = user.id if user else web_user_id
+    effective_user_id = user.web_user_id if user else web_user_id
     role = await _get_member_role(lobby_id, effective_user_id, db)
 
     creator = await db.get(WebUser, lobby.creator_id)
@@ -265,13 +265,13 @@ async def join_lobby(lobby_id: int, req: JoinReq, user: WebUser = Depends(get_cu
     existing = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == user.id,
+            LobbyMember.web_user_id == user.web_user_id,
         )
     )
     if existing.scalars().first():
         return {"ok": True, "message": "Already a member"}
 
-    db.add(LobbyMember(lobby_id=lobby_id, web_user_id=user.id, role="member"))
+    db.add(LobbyMember(lobby_id=lobby_id, web_user_id=user.web_user_id, role="member"))
     await db.commit()
     return {"ok": True, "message": f"Joined '{lobby.name}'"}
 
@@ -289,13 +289,13 @@ async def join_by_code(req: JoinReq, user: WebUser = Depends(get_current_user), 
     existing = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby.id,
-            LobbyMember.web_user_id == user.id,
+            LobbyMember.web_user_id == user.web_user_id,
         )
     )
     if existing.scalars().first():
         return {"ok": True, "lobby_id": lobby.id, "message": "Already a member"}
 
-    db.add(LobbyMember(lobby_id=lobby.id, web_user_id=user.id, role="member"))
+    db.add(LobbyMember(lobby_id=lobby.id, web_user_id=user.web_user_id, role="member"))
     await db.commit()
     return {"ok": True, "lobby_id": lobby.id, "message": f"Joined '{lobby.name}'"}
 
@@ -304,13 +304,13 @@ async def join_by_code(req: JoinReq, user: WebUser = Depends(get_current_user), 
 async def leave_lobby(lobby_id: int, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Leave lobby. Admin cannot leave (must transfer ownership first)."""
     lobby = await _get_lobby_or_404(lobby_id, db)
-    if lobby.creator_id == user.id:
+    if lobby.creator_id == user.web_user_id:
         raise HTTPException(400, "Admin cannot leave. Transfer ownership first.")
 
     res = await db.execute(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == user.id,
+            LobbyMember.web_user_id == user.web_user_id,
         )
     )
     member = res.scalars().first()
@@ -330,8 +330,8 @@ async def list_members(
 ):
     await _get_lobby_or_404(lobby_id, db)
     res = await db.execute(
-        select(LobbyMember, WebUser.name.label("uname"), WebUser.picture.label("upic"))
-        .join(WebUser, LobbyMember.web_user_id == WebUser.id)
+        select(LobbyMember, User.name.label("uname"), User.avatar_url.label("upic"))
+        .join(User, LobbyMember.user_id == User.id)
         .where(LobbyMember.lobby_id == lobby_id)
         .order_by(LobbyMember.role.desc(), LobbyMember.joined_at)
     )
@@ -353,7 +353,7 @@ class RoleChangeReq(BaseModel):
 
 @router.patch("/{lobby_id}/members/{uid}/role")
 async def change_member_role(lobby_id: int, uid: int, req: RoleChangeReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    role = await _get_member_role(lobby_id, user.id, db)
+    role = await _get_member_role(lobby_id, user.web_user_id, db)
     _require_role(role, "admin")
 
     if req.new_role not in ("moderator", "member"):
@@ -380,7 +380,7 @@ async def change_member_role(lobby_id: int, uid: int, req: RoleChangeReq, user: 
 
 @router.delete("/{lobby_id}/members/{uid}")
 async def kick_member(lobby_id: int, uid: int, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    role = await _get_member_role(lobby_id, user.id, db)
+    role = await _get_member_role(lobby_id, user.web_user_id, db)
     _require_role(role, "moderator")
 
     lobby = await db.get(Lobby, lobby_id)
@@ -409,7 +409,7 @@ class LobbySettingsReq(BaseModel):
 
 @router.put("/{lobby_id}/settings")
 async def update_settings(lobby_id: int, req: LobbySettingsReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    role = await _get_member_role(lobby_id, user.id, db)
+    role = await _get_member_role(lobby_id, user.web_user_id, db)
     _require_role(role, "moderator")
     lobby = await _get_lobby_or_404(lobby_id, db)
     if req.name is not None:
@@ -422,7 +422,7 @@ async def update_settings(lobby_id: int, req: LobbySettingsReq, user: WebUser = 
 
 @router.post("/{lobby_id}/invite/reset")
 async def reset_invite_code(lobby_id: int, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    role = await _get_member_role(lobby_id, user.id, db)
+    role = await _get_member_role(lobby_id, user.web_user_id, db)
     _require_role(role, "admin")
     lobby = await _get_lobby_or_404(lobby_id, db)
     lobby.invite_code = secrets.token_urlsafe(8)
@@ -439,7 +439,7 @@ class CreateSeasonReq(BaseModel):
 @router.post("/{lobby_id}/seasons")
 async def create_season(lobby_id: int, req: CreateSeasonReq, user: WebUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Create a new season within this lobby."""
-    role = await _get_member_role(lobby_id, user.id, db)
+    role = await _get_member_role(lobby_id, user.web_user_id, db)
     _require_role(role, "moderator")
 
     season = Season(
@@ -447,7 +447,7 @@ async def create_season(lobby_id: int, req: CreateSeasonReq, user: WebUser = Dep
         status="active",
         calendar=[],
         points_system={},
-        creator_id=user.id,
+        creator_id=user.web_user_id,
         lobby_id=lobby_id,
     )
     db.add(season)

@@ -54,6 +54,12 @@ class WebUser(Base):
 
     player           = relationship("Player")
 
+    # Sprint 2 back-compat: router code does `user.web_user_id`. For a
+    # WebUser ORM object this is just the primary key.
+    @property
+    def web_user_id(self) -> int:
+        return self.id
+
 
 class User(Base):
     """Unified identity (Sprint 2). One row = one person.
@@ -89,18 +95,37 @@ class User(Base):
     legacy_web_user_id  = Column(Integer, unique=True, nullable=True)
     legacy_player_id    = Column(Integer, unique=True, nullable=True)
 
+    # Backwards-compat properties so the bulk of router code (which referred to
+    # `web_user.player_id`, `web_user.picture`, and used `user.id` as a
+    # `web_user_id` FK value) keeps working while we incrementally migrate
+    # write sites to the new `user_id` columns. Dropped together with the
+    # legacy tables in PR 2.5.
+    @property
+    def web_user_id(self) -> int | None:
+        return self.legacy_web_user_id
+
+    @property
+    def player_id(self) -> int | None:
+        return self.legacy_player_id
+
+    @property
+    def picture(self) -> str | None:
+        return self.avatar_url
+
 
 class Lobby(Base):
     """Лобби — группа сезонов с участниками и ролями."""
     __tablename__ = "lobbies"
 
-    id          = Column(Integer, primary_key=True)
-    name        = Column(String(100), nullable=False)
-    description = Column(Text, nullable=True)
-    avatar_url  = Column(Text, nullable=True)
-    creator_id  = Column(Integer, ForeignKey("web_users.id"), nullable=False)
-    invite_code = Column(String(20), unique=True, nullable=False, default=_gen_invite_code)
-    created_at  = Column(TIMESTAMP(timezone=True), default=_utcnow)
+    id              = Column(Integer, primary_key=True)
+    name            = Column(String(100), nullable=False)
+    description     = Column(Text, nullable=True)
+    avatar_url      = Column(Text, nullable=True)
+    creator_id      = Column(Integer, ForeignKey("web_users.id"), nullable=False)
+    # Sprint 2 / PR 2.2: parallel column auto-filled by trigger from creator_id.
+    creator_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    invite_code     = Column(String(20), unique=True, nullable=False, default=_gen_invite_code)
+    created_at      = Column(TIMESTAMP(timezone=True), default=_utcnow)
 
     creator     = relationship("WebUser", foreign_keys=[creator_id])
     members     = relationship("LobbyMember", back_populates="lobby", cascade="all, delete-orphan")
@@ -118,6 +143,8 @@ class LobbyMember(Base):
     id          = Column(Integer, primary_key=True)
     lobby_id    = Column(Integer, ForeignKey("lobbies.id", ondelete="CASCADE"), nullable=False)
     web_user_id = Column(Integer, ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False)
+    # Sprint 2 / PR 2.2: auto-filled by trigger from web_user_id.
+    user_id     = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     role        = Column(String(20), nullable=False, default="member")  # admin / moderator / member
     joined_at   = Column(TIMESTAMP(timezone=True), default=_utcnow)
 

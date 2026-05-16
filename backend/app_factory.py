@@ -30,6 +30,7 @@ from backend.routers import (
     standings,
     stewards,
     telemetry,
+    users,
     web_auth,
     ws,
 )
@@ -131,6 +132,7 @@ def create_app(config: BackendAppConfig | None = None) -> FastAPI:
     app.include_router(standings.router)
     app.include_router(players.router)
     app.include_router(players_admin.router)
+    app.include_router(users.router)
     app.include_router(admin.router)
     app.include_router(stewards.router)
     app.include_router(achievements.router)

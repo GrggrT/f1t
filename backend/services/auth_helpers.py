@@ -11,12 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.base import get_db
-from backend.models.models import Lobby, LobbyMember, Season, WebUser
+from backend.models.models import Lobby, LobbyMember, Season, User, WebUser
 from backend.services.auth_dependencies import get_current_user
 
 
 async def require_system_admin_dep(
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> WebUser:
     """Authenticated AND `is_system_admin`. 401 if no token, 403 if not admin."""
     if not user.is_system_admin:
@@ -26,9 +26,9 @@ async def require_system_admin_dep(
 
 async def require_lobby_member(
     lobby_id: int,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> LobbyMember | WebUser:
+) -> LobbyMember | User:
     """User must be a member (any role) of the lobby. 403 otherwise.
 
     System admins bypass — they have global read/write access by design.
@@ -38,7 +38,7 @@ async def require_lobby_member(
     member = await db.scalar(
         select(LobbyMember).where(
             LobbyMember.lobby_id == lobby_id,
-            LobbyMember.web_user_id == user.id,
+            LobbyMember.web_user_id == user.web_user_id,
         )
     )
     if not member:
@@ -48,9 +48,9 @@ async def require_lobby_member(
 
 async def require_lobby_moderator(
     lobby_id: int,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> LobbyMember | WebUser:
+) -> LobbyMember | User:
     """User must be admin or moderator of the lobby. 403 otherwise.
 
     System admins bypass.
@@ -58,7 +58,7 @@ async def require_lobby_moderator(
     if user.is_system_admin:
         return user
     member = await require_lobby_member(lobby_id, user, db)
-    if isinstance(member, WebUser):
+    if isinstance(member, User):
         return member  # system_admin bypass already handled
     if member.role not in ("admin", "moderator"):
         raise HTTPException(403, "Moderator+ role required")
@@ -67,9 +67,9 @@ async def require_lobby_moderator(
 
 async def require_season_member(
     season_id: int,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> LobbyMember | WebUser:
+) -> LobbyMember | User:
     """User must be a member of the lobby that owns the given season.
 
     System admins bypass.
@@ -85,9 +85,9 @@ async def require_season_member(
 
 async def require_season_moderator(
     season_id: int,
-    user: WebUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> LobbyMember | WebUser:
+) -> LobbyMember | User:
     """Moderator+ of the lobby that owns the given season.
 
     System admins bypass.
