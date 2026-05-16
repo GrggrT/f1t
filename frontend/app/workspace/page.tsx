@@ -128,8 +128,8 @@ export default function WorkspacePage() {
                     Открыть публичный профиль
                   </Link>
                 ) : (
-                  <Link href="/me" className="ui-button-secondary">
-                    Привязать профиль лиги
+                  <Link href="/login" className="ui-button-secondary">
+                    Подключить Steam
                   </Link>
                 )}
                 <Link href="/me" className="ui-button-tertiary">
@@ -143,7 +143,7 @@ export default function WorkspacePage() {
             <p className="utility-kicker">Состояние аккаунта</p>
             <p className="mt-3 text-lg font-semibold text-text">{profile.email ?? "Аккаунт сайта"}</p>
             <p className="mt-2 text-sm text-muted">
-              {summary ? `Рейтинг ${summary.rating.rating} · Пик ${summary.rating.peak_rating}` : "Привяжите профиль лиги, чтобы видеть прогресс и телеметрический контекст."}
+              {summary ? `Рейтинг ${summary.rating.rating} · Пик ${summary.rating.peak_rating}` : "Подключите Steam или зарегистрируйтесь в Telegram-боте, чтобы видеть прогресс и телеметрию."}
             </p>
           </div>
         </div>
@@ -151,9 +151,9 @@ export default function WorkspacePage() {
 
       <section className="summary-grid">
         <div className="stat-card">
-          <p className="stat-label">Связанный профиль</p>
-          <p className="stat-value">{profile.player_id ? "Да" : "Нет"}</p>
-          <p className="mt-2 text-sm text-muted">{profile.player_id ? "Готов к истории сезонов и телеметрии" : "Используйте центр аккаунта, чтобы привязать профиль пилота"}</p>
+          <p className="stat-label">Игровая идентичность</p>
+          <p className="stat-value">{profile.player_id ? "Подключена" : "Не подключена"}</p>
+          <p className="mt-2 text-sm text-muted">{profile.player_id ? "Готов к истории сезонов и телеметрии" : "Войдите через Steam или зарегистрируйтесь в Telegram-боте"}</p>
         </div>
         <div className="stat-card">
           <p className="stat-label">Мои лобби</p>
@@ -164,7 +164,7 @@ export default function WorkspacePage() {
           <p className="stat-label">Текущий сезон</p>
           <p className="stat-value">{activeSeason?.season_name ?? "Архив"}</p>
           <p className="mt-2 text-sm text-muted">
-            {activeSeason ? `${activeSeason.position ? `P${activeSeason.position}` : "Позиция уточняется"} · ${activeSeason.points} очков` : "Вступите или привяжите сезон, чтобы видеть прогресс"}
+            {activeSeason ? `${activeSeason.position ? `P${activeSeason.position}` : "Позиция уточняется"} · ${activeSeason.points} очков` : "Войдите в активное лобби, чтобы видеть прогресс по сезону"}
           </p>
         </div>
         <div className="stat-card">

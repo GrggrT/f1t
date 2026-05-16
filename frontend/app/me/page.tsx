@@ -233,8 +233,8 @@ export default function MePage() {
                 <h1 className="page-title">{displayName}</h1>
               </div>
               <p className="page-copy">
-                Кабинет остается основным хабом участника. Эта страница работает как расширенный слой аккаунта для привязки
-                профиля, создания лобби, доступа к ассистенту и входа в админские поверхности.
+                Кабинет остается основным хабом участника. Эта страница даёт расширенный слой аккаунта: создание лобби,
+                доступ к ассистенту, вход в админские поверхности и подключение игровой идентичности (Steam / Telegram).
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link href="/workspace" className="ui-button-primary">
@@ -256,7 +256,7 @@ export default function MePage() {
             <p className="utility-kicker">Состояние аккаунта</p>
             <p className="mt-3 text-lg font-semibold text-text">{me.email ?? "Аккаунт сайта"}</p>
             <p className="mt-2 text-sm text-muted">
-              {profile ? `Рейтинг ${profile.rating.rating} - уровень ${ratingTier(profile.rating.rating)}` : "Привяжите профиль лиги, чтобы открыть контекст прогресса."}
+              {profile ? `Рейтинг ${profile.rating.rating} - уровень ${ratingTier(profile.rating.rating)}` : "Подключите Steam через вход или зарегистрируйтесь в Telegram-боте, чтобы появился прогресс."}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {me.steam_id64 ? <span className="data-pill">Steam привязан</span> : null}
@@ -269,14 +269,14 @@ export default function MePage() {
 
       <section className="summary-grid">
         <div className="stat-card">
-          <p className="stat-label">Связанный игрок</p>
-          <p className="stat-value">{me.player_id ? "Готово" : "Отсутствует"}</p>
-          <p className="mt-2 text-sm text-muted">{me.player_id ? "История сезонов и телеметрия доступны" : "Сначала привяжите идентичность пилота"}</p>
+          <p className="stat-label">Игровая идентичность</p>
+          <p className="stat-value">{me.player_id ? "Подключена" : "Не подключена"}</p>
+          <p className="mt-2 text-sm text-muted">{me.player_id ? "История сезонов и телеметрия доступны" : "Войдите через Steam или зарегистрируйтесь в боте"}</p>
         </div>
         <div className="stat-card">
           <p className="stat-label">Рейтинг</p>
           <p className="stat-value mono-data">{profile?.rating.rating ?? "--"}</p>
-          <p className="mt-2 text-sm text-muted">{profile ? `Пик ${profile.rating.peak_rating}` : "Появится после привязки профиля"}</p>
+          <p className="mt-2 text-sm text-muted">{profile ? `Пик ${profile.rating.peak_rating}` : "Появится после первой засчитанной гонки"}</p>
         </div>
         <div className="stat-card">
           <p className="stat-label">Гонки</p>
