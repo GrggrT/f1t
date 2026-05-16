@@ -74,7 +74,9 @@ async def cmd_stats(msg: Message) -> None:
     tg_id = msg.from_user.id if msg.from_user else None
 
     if not args:
-        # Ищем по telegram_id
+        # Ищем по telegram_id через unified /api/users (Sprint 2 / PR 2.3).
+        # Response: User shape — `id` это users.id, а `legacy_player_id`
+        # это players.id, который и нужен дальше для /api/player/{id}/stats.
         if not tg_id:
             await msg.reply("Не удалось определить Telegram ID")
             return
@@ -83,7 +85,7 @@ async def cmd_stats(msg: Message) -> None:
         from bot.config import API_URL
         try:
             async with httpx.AsyncClient() as client:
-                r = await client.get(f"{API_URL}/api/players/by_telegram/{tg_id}")
+                r = await client.get(f"{API_URL}/api/users/by_telegram/{tg_id}")
                 if r.status_code == 404:
                     await msg.reply(
                         "Ты ещё не зарегистрирован.\n"
@@ -91,8 +93,16 @@ async def cmd_stats(msg: Message) -> None:
                         parse_mode="HTML"
                     )
                     return
-                player = r.json()
-                player_id = player["id"]
+                user = r.json()
+                player_id = user.get("legacy_player_id")
+                if not player_id:
+                    await msg.reply(
+                        "Профиль есть, но к гоночному игроку он ещё не привязан.\n"
+                        "Открой <a href=\"http://192.168.0.114.nip.io:3000/me\">личный кабинет</a> "
+                        "и нажми «Привязать профиль».",
+                        parse_mode="HTML"
+                    )
+                    return
         except Exception as e:
             await msg.reply(f"Ошибка: {e}")
             return
