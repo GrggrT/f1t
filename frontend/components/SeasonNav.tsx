@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { useEffect, useState } from "react"
 
+import { apiFetch } from "@/lib/api-client"
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? ""
 
 interface Props {
@@ -36,7 +38,7 @@ export function SeasonNav({ seasonId, seasonName, status, lobbyId }: Props) {
       return
     }
 
-    fetch(`${API}/api/lobby/${lobbyId}?web_user_id=${userId}`)
+    apiFetch(`/api/lobby/${lobbyId}`)
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
         if (payload?.your_role) {

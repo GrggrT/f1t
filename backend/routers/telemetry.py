@@ -795,16 +795,14 @@ async def race_debrief(
     race_id: int,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """AI race debrief with corner-specific telemetry analysis."""
-    import os, httpx
+    """AI race debrief with corner-specific telemetry analysis.
 
-    # `web_user_id` field name preserved for back-compat with old launcher/agent
-    # builds; treated as users.id (with fallback to legacy_web_user_id lookup).
-    requested_user_id = body.get("web_user_id") or body.get("user_id")
-    if not requested_user_id:
-        raise HTTPException(400, "user_id required")
+    Sprint 3 / PR 3.1: pilot identity for the "THIS DRIVER" marker comes from
+    the Bearer JWT — body no longer accepts `web_user_id` / `user_id`.
+    """
+    import os, httpx
 
     groq_key = os.getenv("GROQ_API_KEY", "")
     groq_url = os.getenv("GROQ_URL", "https://api.groq.com/openai/v1/chat/completions")
@@ -812,12 +810,7 @@ async def race_debrief(
     if not groq_key:
         return {"debrief": "Race engineer unavailable — GROQ_API_KEY not set."}
 
-    from sqlalchemy import or_
-    user_row = await db.execute(
-        select(User).where(or_(User.id == requested_user_id, User.legacy_web_user_id == requested_user_id))
-    )
-    user_record = user_row.scalars().first()
-    player_id = user_record.id if user_record else None
+    player_id = user.id
 
     # Get race info
     race_row = await db.execute(select(Race).where(Race.id == race_id))

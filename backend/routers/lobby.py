@@ -105,13 +105,13 @@ async def create_lobby(req: CreateLobbyReq, user: User = Depends(get_current_use
 
 
 @router.get("")
-async def list_lobbies(web_user_id: int | None = None, user: User | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
+async def list_lobbies(user: User | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
     """List lobbies. If authenticated — their lobbies, else all.
 
-    The legacy `web_user_id` query param is accepted for back-compat with old
-    frontend builds; it is interpreted as the unified `user_id`.
+    Sprint 3 / PR 3.1: identity comes from the Bearer JWT only — the legacy
+    `?web_user_id=` query param is gone.
     """
-    effective_user_id = user.id if user else web_user_id
+    effective_user_id = user.id if user else None
     if effective_user_id:
         res = await db.execute(
             select(Lobby, LobbyMember.role)
@@ -206,10 +206,13 @@ async def list_host_seasons(user: User = Depends(get_current_user), db: AsyncSes
 
 
 @router.get("/{lobby_id}")
-async def get_lobby(lobby_id: int, web_user_id: int | None = None, user: User | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
-    """Lobby detail + current user's role."""
+async def get_lobby(lobby_id: int, user: User | None = Depends(get_current_user_optional), db: AsyncSession = Depends(get_db)):
+    """Lobby detail + current user's role.
+
+    Sprint 3 / PR 3.1: identity comes from the Bearer JWT only.
+    """
     lobby = await _get_lobby_or_404(lobby_id, db)
-    effective_user_id = user.id if user else web_user_id
+    effective_user_id = user.id if user else None
     role = await _get_member_role(lobby_id, effective_user_id, db)
 
     creator = await db.get(User, lobby.creator_user_id)
@@ -342,7 +345,6 @@ async def list_members(
     return [
         {
             "user_id":     row.LobbyMember.user_id,
-            "web_user_id": row.LobbyMember.user_id,  # back-compat alias for older frontend
             "name":        row.uname,
             "picture":     row.upic,
             "role":        row.LobbyMember.role,

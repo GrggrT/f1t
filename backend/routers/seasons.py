@@ -75,25 +75,25 @@ async def get_season(season_id: int, db: AsyncSession = Depends(get_db)):
 
 
 class AssistantRequest(BaseModel):
-    player_id: int
-    question:  str
+    question: str
+    # Sprint 3 / PR 3.1: `player_id` is gone — assistant operates on the
+    # authenticated user only. Admin "ask about user X" is out of scope.
 
 
 @router.post("/assistant")
 async def personal_assistant(
     req: AssistantRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """Персональный AI-ассистент — анализирует общий перформанс пользователя по всем сезонам."""
-    user_row = await db.get(User, req.player_id)
-    if not user_row:
-        raise HTTPException(404, "Player not found")
+    """Персональный AI-ассистент — анализирует перформанс текущего пользователя."""
+    user_row = user
+    target_id = user.id
 
     standings_res = await db.execute(
         select(ChampionshipStanding, Season.name.label("season_name"))
         .join(Season, ChampionshipStanding.season_id == Season.id)
-        .where(ChampionshipStanding.user_id == req.player_id)
+        .where(ChampionshipStanding.user_id == target_id)
         .order_by(Season.id)
     )
     standings_rows = standings_res.all()
@@ -101,7 +101,7 @@ async def personal_assistant(
     results_res = await db.execute(
         select(RaceResult, Race.track_name, Race.season_id)
         .join(Race, RaceResult.race_id == Race.id)
-        .where(RaceResult.user_id == req.player_id)
+        .where(RaceResult.user_id == target_id)
         .order_by(Race.raced_at)
     )
     results_rows = results_res.all()

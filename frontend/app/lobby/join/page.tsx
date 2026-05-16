@@ -32,7 +32,7 @@ function JoinContent() {
     try {
       const response = await apiFetch(`/api/lobby/join-by-code`, {
         method: "POST",
-        body: JSON.stringify({ web_user_id: userId, invite_code: code.trim() }),
+        body: JSON.stringify({ invite_code: code.trim() }),
       })
       const payload = await response.json()
 

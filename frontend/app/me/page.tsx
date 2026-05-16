@@ -123,7 +123,7 @@ export default function MePage() {
     // "привязать игрока" picker. Linking will be reintroduced via the
     // Telegram bot deep-link in Sprint 6 (UX rebuild).
 
-    apiFetch(`/api/lobby?web_user_id=${userId}`)
+    apiFetch(`/api/lobby`)
       .then((response) => (response.ok ? response.json() : []))
       .then(setLobbies)
       .catch(() => {})
@@ -158,6 +158,9 @@ export default function MePage() {
   }
 
   async function askAssistant() {
+    // Sprint 3 / PR 3.1: assistant always operates on the current Bearer user.
+    // We still gate the UI on `me?.player_id` so users without racing identity
+    // see a clear "connect Steam/Telegram" affordance instead of a noisy answer.
     if (!question.trim() || !me?.player_id) {
       return
     }
@@ -168,7 +171,7 @@ export default function MePage() {
     try {
       const response = await apiFetch(`/api/seasons/assistant`, {
         method: "POST",
-        body: JSON.stringify({ player_id: me.player_id, question: question.trim() }),
+        body: JSON.stringify({ question: question.trim() }),
       })
       const payload = await response.json()
       setAssistantAnswer(payload.answer ?? "Ответ не был получен.")
@@ -188,12 +191,12 @@ export default function MePage() {
     try {
       const response = await apiFetch(`/api/lobby`, {
         method: "POST",
-        body: JSON.stringify({ name: newLobbyName.trim(), web_user_id: me.id }),
+        body: JSON.stringify({ name: newLobbyName.trim() }),
       })
 
       if (response.ok) {
         setNewLobbyName("")
-        const nextLobbies = await apiFetch(`/api/lobby?web_user_id=${me.id}`).then((nextResponse) =>
+        const nextLobbies = await apiFetch(`/api/lobby`).then((nextResponse) =>
           nextResponse.ok ? nextResponse.json() : [],
         )
         setLobbies(nextLobbies)

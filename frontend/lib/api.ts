@@ -298,7 +298,7 @@ export interface LobbyListItem {
 }
 
 export interface LobbyMember {
-  web_user_id: number
+  user_id:     number
   name:        string
   picture:     string | null
   role:        string

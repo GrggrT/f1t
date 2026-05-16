@@ -559,3 +559,46 @@ columns; a future cosmetic migration will drop them.
 - Git tag: `post-sprint-2` → commit `8021375` (pushed to origin)
 - Pre-Sprint-2-PR2.5 snapshot: `backups/pre-sprint-2-final-20260516-152417.pgc` (115 KB)
 - External copy: ⚠️ TO BE DONE MANUALLY BY OWNER (Google Drive / OneDrive / USB)
+
+---
+
+## Sprint 3 / PR 3.1: pre-flight (date: 2026-05-16)
+
+### Backend Pydantic schemas / handlers reading identity from request
+
+| File | Site | Identity field | Today's behavior |
+|------|------|----------------|------------------|
+| `routers/lobby.py:108` | `GET /api/lobby?web_user_id=` query param | `web_user_id` | Optional anonymous-viewer fallback. Today bearer JWT (`get_current_user_optional`) takes precedence when present. |
+| `routers/lobby.py:209` | `GET /api/lobby/{id}?web_user_id=` query param | `web_user_id` | Same pattern. |
+| `routers/lobby.py:345` | `list_members` response — emits `"web_user_id"` alias key | (response, not input) | Back-compat for old frontend reading `member.web_user_id`. |
+| `routers/telemetry.py:803-808` | `POST /api/telemetry/race-analysis/{id}/debrief` body — reads `body.get("web_user_id") or body.get("user_id")` | both | Required field (returns 400 if absent). Looks up via `User.id OR User.legacy_web_user_id`. |
+| `routers/seasons.py:78` | `POST /api/seasons/assistant` body — `AssistantRequest.player_id: int` | `player_id` | Required field. Endpoint uses it to fetch the User row + filter standings/results. |
+| `routers/users.py:40` | `GET /api/users/by_telegram/{id}` response — emits `legacy_web_user_id` | (response) | Diagnostic field. |
+
+**Out of scope (kept):**
+- `routers/contracts.py:62` — `AcceptRequest.player_id` is "which player's contract", not user identity; already has 403 check for non-admin trying to accept for others.
+- `routers/players_admin.py:33` — `MapSteamRequest.player_id` is steward action target, not requester identity (system_admin only).
+- `routers/practice.py` — already clean (uses `Depends(get_current_user)`).
+
+### Frontend sites sending identity in request body / query param
+
+| File | Site | Change |
+|------|------|--------|
+| `app/me/page.tsx:126` | `apiFetch('/api/lobby?web_user_id=...')` | Drop query param. |
+| `app/me/page.tsx:191` | `POST /api/lobby` body — `{name, web_user_id}` | Drop `web_user_id`. |
+| `app/me/page.tsx:196` | refresh list — `?web_user_id=` | Drop. |
+| `app/workspace/page.tsx:81` | `?web_user_id=` | Drop. |
+| `app/lobby/[id]/page.tsx:29,53` | `?web_user_id=` | Drop. |
+| `app/lobby/[id]/page.tsx:48` | `POST .../seasons` body — `{requester_id, name}` | Drop `requester_id`. |
+| `app/lobby/[id]/page.tsx:238` | reads `member.web_user_id` | Switch to `member.user_id`. |
+| `app/lobby/join/page.tsx:35` | `POST /api/lobby/join-by-code` body — `{web_user_id, invite_code}` | Drop `web_user_id`. |
+| `app/season/[id]/engineer/page.tsx:58,92` | `?web_user_id=`, body | Drop. |
+| `app/race/[id]/analysis/page.tsx:169` | debrief body — `{web_user_id, question}` | Drop `web_user_id`. |
+| `app/practice/page.tsx:56` | `?web_user_id=` (backend ignores it) | Drop (cosmetic). |
+| `components/SeasonNav.tsx:39` | `?web_user_id=` | Drop. |
+| `lib/api.ts:117,301` | type field declarations | Drop `web_user_id`, keep `legacy_web_user_id` as optional (only emitted by `users.py` for diagnostics). |
+
+### Inventory totals
+- Backend: 6 sites (4 input sites + 1 response alias + 1 diagnostic).
+- Frontend: 14 sites across 9 files.
+- New tests to add: `tests/test_identity_only_from_jwt.py` (~3 cases per spec).

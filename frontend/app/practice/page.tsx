@@ -53,7 +53,7 @@ export default function PracticePage() {
       return
     }
 
-    apiFetch(`/api/practice/sessions?web_user_id=${userId}`)
+    apiFetch(`/api/practice/sessions`)
       .then((response) => (response.ok ? response.json() : []))
       .then((payload) => setSessions(Array.isArray(payload) ? payload : []))
       .finally(() => setLoading(false))

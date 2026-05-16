@@ -26,7 +26,8 @@ export default function LobbyPage() {
     }
 
     Promise.all([
-      apiFetch(`/api/lobby/${id}${userId ? `?web_user_id=${userId}` : ""}`).then((response) => (response.ok ? response.json() : null)),
+      // Sprint 3 / PR 3.1: identity from Bearer JWT (apiFetch attaches it).
+      apiFetch(`/api/lobby/${id}`).then((response) => (response.ok ? response.json() : null)),
       apiFetch(`/api/lobby/${id}/members`).then((response) => (response.ok ? response.json() : [])),
     ])
       .then(([nextLobby, nextMembers]) => {
@@ -45,12 +46,12 @@ export default function LobbyPage() {
     try {
       const response = await apiFetch(`/api/lobby/${id}/seasons`, {
         method: "POST",
-        body: JSON.stringify({ requester_id: userId, name: newSeasonName.trim() }),
+        body: JSON.stringify({ name: newSeasonName.trim() }),
       })
 
       if (response.ok) {
         setNewSeasonName("")
-        const refreshedLobby = await apiFetch(`/api/lobby/${id}?web_user_id=${userId}`).then((nextResponse) =>
+        const refreshedLobby = await apiFetch(`/api/lobby/${id}`).then((nextResponse) =>
           nextResponse.ok ? nextResponse.json() : null,
         )
         setLobby(refreshedLobby)
@@ -235,7 +236,7 @@ export default function LobbyPage() {
             <p className="eyebrow">Участники</p>
             <div className="mt-4 space-y-3">
               {members.map((member) => (
-                <div key={member.web_user_id} className="flex items-center gap-3">
+                <div key={member.user_id} className="flex items-center gap-3">
                   {member.picture ? (
                     <img src={member.picture} alt="" className="h-9 w-9 rounded-full object-cover" />
                   ) : (

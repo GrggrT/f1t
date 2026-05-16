@@ -5,6 +5,8 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 
+import { apiFetch } from "@/lib/api-client"
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? ""
 
 interface LobbyItem {
@@ -78,7 +80,9 @@ export default function WorkspacePage() {
       })
       .catch(() => {})
 
-    fetch(`${API}/api/lobby?web_user_id=${userId}`)
+    // Sprint 3 / PR 3.1: identity from Bearer JWT (apiFetch attaches it),
+    // no `?web_user_id=` query param needed.
+    apiFetch(`/api/lobby`)
       .then((response) => (response.ok ? response.json() : []))
       .then(setLobbies)
       .catch(() => {})

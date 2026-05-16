@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react"
 import { useEffect, useMemo, useState } from "react"
 import { RaceNav } from "@/components/RaceNav"
 import { formatLapTime } from "@/lib/utils"
+import { apiFetch } from "@/lib/api-client"
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? ""
 
@@ -163,10 +164,9 @@ export default function RaceAnalysisPage() {
 
     setDebriefLoading(true)
     try {
-      const response = await fetch(`${API}/api/telemetry/race-analysis/${raceId}/debrief`, {
+      const response = await apiFetch(`/api/telemetry/race-analysis/${raceId}/debrief`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ web_user_id: userId, question: "Подготовь структурированный дебриф гонки: сильные стороны, слабые стороны и следующие шаги." }),
+        body: JSON.stringify({ question: "Подготовь структурированный дебриф гонки: сильные стороны, слабые стороны и следующие шаги." }),
       })
       const payload = await response.json()
       setDebrief(payload.debrief ?? "Дебриф не был получен.")
